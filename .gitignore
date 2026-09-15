@@ -4,3 +4,5 @@ dist/
 *.log
 pipeline/data/catalog-raw.json
 pipeline/data/cf-vanguard-raw.json
+.vercel
+.env*
