@@ -1,5 +1,5 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
-import { fetchCatalog } from './api'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { fetchCatalog, refreshCatalog } from './api'
 import { getRates } from './currency'
 import Header from './components/Header'
 import SearchBar from './components/SearchBar'
@@ -30,6 +30,7 @@ function App() {
   const [meta, setMeta] = useState(null) // { generatedAt, count }
   const [status, setStatus] = useState('loading') // 'loading' | 'ready' | 'error'
   const [errorMessage, setErrorMessage] = useState('')
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [query, setQuery] = useState('')
   const [setSlug, setSetSlug] = useState('') // '' = All Sets
   const [rarity, setRarity] = useState('') // '' = All Rarities
@@ -50,7 +51,7 @@ function App() {
       .then((data) => {
         if (cancelled) return
         setCards(data.cards)
-        setMeta({ generatedAt: data.generatedAt, count: data.count })
+        setMeta({ generatedAt: data.generatedAt, count: data.count, fromCache: data.fromCache })
         setStatus('ready')
       })
       .catch((err) => {
@@ -62,6 +63,22 @@ function App() {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  // Manual "get the latest data now" escape hatch — bypasses the daily
+  // cache instead of waiting for it to expire on its own.
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true)
+    refreshCatalog()
+      .then((data) => {
+        setCards(data.cards)
+        setMeta({ generatedAt: data.generatedAt, count: data.count, fromCache: data.fromCache })
+      })
+      .catch((err) => {
+        setErrorMessage(err.message)
+        setStatus('error')
+      })
+      .finally(() => setIsRefreshing(false))
   }, [])
 
   // Fetch JPY exchange rates once on mount, independent of the catalog load
@@ -162,6 +179,22 @@ function App() {
                     isFiltered ? 'matching ' : ''
                   }cards`)}
           </div>
+
+          {status === 'ready' && meta && (
+            <div className="mx-auto mt-1 max-w-xl px-4 text-center text-[11px] text-slate-400">
+              {meta.fromCache
+                ? 'Loaded from today’s local cache.'
+                : 'Freshly loaded — now cached for the rest of today.'}{' '}
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="font-medium text-blue-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                {isRefreshing ? 'Refreshing…' : 'Refresh now'}
+              </button>
+            </div>
+          )}
         </div>
 
         {status === 'loading' && (
