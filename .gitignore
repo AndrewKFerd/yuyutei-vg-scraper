@@ -2,4 +2,5 @@ node_modules/
 dist/
 .env
 *.log
-backend/data/
+pipeline/data/catalog-raw.json
+pipeline/data/cf-vanguard-raw.json

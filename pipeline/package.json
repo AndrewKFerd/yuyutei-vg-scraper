@@ -1,0 +1,12 @@
+{
+  "name": "yuyutei-pipeline",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Scraping/translation pipeline scripts for the full yuyu-tei Vanguard catalog.",
+  "scripts": {
+    "scrape": "node scrape-catalog.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0"
+  }
+}
