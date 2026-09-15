@@ -203,7 +203,10 @@ async function scrapeSet(keyword) {
   const firstUrl = buildSearchUrl(keyword);
   const firstHtml = await fetchWithRetry(firstUrl);
   pages++;
-  if (firstHtml === null) return { cards, pages, totalResults: 0 };
+  // null (not 0) distinguishes "the fetch itself failed after retries" from
+  // a genuine 0-result search, so a transient network/HTTP failure can't be
+  // mistaken for "this set doesn't exist" by the caller.
+  if (firstHtml === null) return { cards, pages, totalResults: null };
 
   const resultsMatch = firstHtml.match(/(\d+)\s*Results/);
   const totalResults = resultsMatch ? parseInt(resultsMatch[1], 10) : 0;
@@ -243,7 +246,22 @@ async function discoverAndScrapeFamily(family) {
     const keyword = `${prefix}${setNo}`;
 
     await sleep(DELAY_MS);
-    const { cards, pages, totalResults } = await scrapeSet(keyword);
+    let { cards, pages, totalResults } = await scrapeSet(keyword);
+
+    if (totalResults === null) {
+      // The probe request itself failed (not "0 results") — could be a
+      // transient network hiccup, not proof this set doesn't exist. Retry
+      // once more before giving up, so one bad request can't silently
+      // truncate the rest of the family.
+      console.warn(`[${prefix}] ${keyword}: fetch failed, retrying once before assuming end-of-family...`);
+      await sleep(DELAY_MS);
+      ({ cards, pages, totalResults } = await scrapeSet(keyword));
+    }
+
+    if (totalResults === null) {
+      console.warn(`[${prefix}] ${keyword}: fetch failed again — stopping family ${prefix} here (data may be incomplete).`);
+      break;
+    }
 
     if (totalResults === 0) {
       console.log(`[${prefix}] ${keyword}: 0 results — stopping family (last real set was ${prefix}${String(n - 1).padStart(pad, '0')}).`);

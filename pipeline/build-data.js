@@ -18,9 +18,20 @@ const { findOfficialName } = require('./match-official');
 const CATALOG_PATH = path.join(__dirname, 'data', 'catalog-raw.json');
 const OUT_PATH = path.join(__dirname, '..', 'frontend', 'public', 'data', 'cards.json');
 
+// Both fields end up as raw `<a href>`/`<img src>` values in the frontend.
+// Cheap belt-and-suspenders check against a compromised/malformed source
+// page ever slipping a non-http(s) or off-site URL (e.g. `javascript:`)
+// into the shipped dataset.
+const ALLOWED_URL_RE = /^https:\/\/(card\.)?yuyu-tei\.jp\//i;
+
+function sanitizeUrl(url) {
+  return typeof url === 'string' && ALLOWED_URL_RE.test(url) ? url : null;
+}
+
 function main() {
   const raw = JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf8'));
   const sourceCounts = { official: 0, glossary: 0, romaji: 0, mixed: 0, passthrough: 0 };
+  let droppedUrls = 0;
 
   const cards = raw.cards.map((c) => {
     let nameEn;
@@ -38,8 +49,16 @@ function main() {
 
     sourceCounts[translationSource] = (sourceCounts[translationSource] || 0) + 1;
 
+    const imageUrl = sanitizeUrl(c.imageUrl);
+    const detailUrl = sanitizeUrl(c.detailUrl);
+    if (!imageUrl || !detailUrl) droppedUrls++;
+
     return {
-      id: c.id,
+      // c.id is yuyu-tei's per-set product number, not globally unique
+      // (yuyu-tei reuses it across sets) — compose with setSlug so every
+      // card in this catalog has a truly unique id (used as the frontend's
+      // React list key).
+      id: `${c.setSlug}/${c.id}`,
       setCode: c.setCode,
       setSlug: c.setSlug,
       rarity: c.rarity,
@@ -49,8 +68,8 @@ function main() {
       price: c.price,
       priceDisplay: c.priceDisplay,
       stock: c.stock,
-      imageUrl: c.imageUrl,
-      detailUrl: c.detailUrl,
+      imageUrl,
+      detailUrl,
     };
   });
 
@@ -65,6 +84,9 @@ function main() {
 
   console.log(`Wrote ${cards.length} cards to ${OUT_PATH}`);
   console.log('translationSource breakdown:', sourceCounts);
+  if (droppedUrls > 0) {
+    console.warn(`${droppedUrls} card(s) had an imageUrl/detailUrl outside the yuyu-tei.jp allowlist (set to null).`);
+  }
   const sizeMb = fs.statSync(OUT_PATH).size / (1024 * 1024);
   console.log(`Output size: ${sizeMb.toFixed(2)} MB`);
 }

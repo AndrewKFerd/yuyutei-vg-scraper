@@ -36,9 +36,13 @@ function buildUrl(page) {
 
 function parsePrice(text) {
   if (!text) return null;
-  const digits = text.replace(/[^0-9]/g, '');
-  if (!digits) return null;
-  return parseInt(digits, 10);
+  // Take the first contiguous run of digits, not every digit in the string
+  // concatenated — a strip-and-join would silently produce a bogus number if
+  // the node ever contained two separate numbers (e.g. a struck-through
+  // original price next to a sale price).
+  const match = text.match(/\d[\d,]*/);
+  if (!match) return null;
+  return parseInt(match[0].replace(/,/g, ''), 10);
 }
 
 function parseStock(text) {
@@ -152,6 +156,12 @@ async function scrapeCatalog() {
   const cards = [];
   let duplicatesSkipped = 0;
   let pagesScraped = 0;
+  let consecutiveEmptyPages = 0;
+  // A single 0-card page could be a transient hiccup (temporary block page,
+  // odd render) rather than the true end of the catalog. Require 2 in a row
+  // before concluding we're done, so one flaky page can't silently truncate
+  // an otherwise-complete crawl.
+  const EMPTY_PAGES_TO_CONFIRM_END = 2;
 
   console.log('Starting full VG catalog crawl...');
 
@@ -168,9 +178,19 @@ async function scrapeCatalog() {
     const pageCards = parseCardsFromHtml(html);
 
     if (pageCards.length === 0) {
-      console.log(`Page ${page} returned 0 cards — treating as end of catalog. Stopping.`);
-      break;
+      consecutiveEmptyPages++;
+      console.log(
+        `Page ${page} returned 0 cards (${consecutiveEmptyPages}/${EMPTY_PAGES_TO_CONFIRM_END} consecutive).`
+      );
+      if (consecutiveEmptyPages >= EMPTY_PAGES_TO_CONFIRM_END) {
+        console.log('Confirmed end of catalog. Stopping.');
+        break;
+      }
+      pagesScraped++;
+      await sleep(DELAY_MS);
+      continue;
     }
+    consecutiveEmptyPages = 0;
 
     pagesScraped++;
 
