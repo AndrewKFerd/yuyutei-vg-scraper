@@ -1,11 +1,19 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { fetchCatalog } from './api'
+import { getRates } from './currency'
 import Header from './components/Header'
 import SearchBar from './components/SearchBar'
 import SetFilter from './components/SetFilter'
+import RarityFilter from './components/RarityFilter'
+import CurrencySelector from './components/CurrencySelector'
 import CardGrid from './components/CardGrid'
 import Pagination from './components/Pagination'
 import Footer from './components/Footer'
+
+// Preferred display order for the rarity dropdown (rarest/most notable
+// first); anything not listed here (yuyu-tei adds new codes over time) is
+// appended afterward, alphabetically.
+const RARITY_ORDER = ['SEC', 'SP', 'FFR', 'SR', 'RRR', 'RR', 'R', 'C']
 
 // The catalog now spans the entire Vanguard card range (tens of thousands
 // of rows), so we never render every matching card's <img> at once —
@@ -24,7 +32,10 @@ function App() {
   const [errorMessage, setErrorMessage] = useState('')
   const [query, setQuery] = useState('')
   const [setSlug, setSetSlug] = useState('') // '' = All Sets
+  const [rarity, setRarity] = useState('') // '' = All Rarities
   const [page, setPage] = useState(1)
+  const [currency, setCurrency] = useState('JPY')
+  const [rates, setRates] = useState(null)
 
   // Keeps the input snappy: the text state updates immediately on every
   // keystroke, while the (potentially expensive) filtered grid re-render
@@ -53,7 +64,21 @@ function App() {
     }
   }, [])
 
-  // Distinct sets present in the loaded catalog, for the "All Sets" dropdown.
+  // Fetch JPY exchange rates once on mount, independent of the catalog load
+  // (currency defaults to JPY so this never blocks anything — it just makes
+  // switching currency later feel instant, since getRates() itself already
+  // caches to localStorage and falls back gracefully on failure).
+  useEffect(() => {
+    let cancelled = false
+    getRates().then((r) => {
+      if (!cancelled) setRates(r)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Distinct sets present in the loaded catalog, for the set search dropdown.
   const setOptions = useMemo(() => {
     const slugs = new Set()
     for (const card of cards) {
@@ -62,13 +87,29 @@ function App() {
     return Array.from(slugs).sort()
   }, [cards])
 
-  // Text search and the set dropdown AND together. Both are cheap linear
-  // scans over the in-memory array, and re-running this only depends on
-  // the deferred (lagged) query plus the set filter, not on pagination.
+  // Distinct rarities present in the loaded catalog, known ones first (in a
+  // sensible rarest-first order), anything unrecognized appended after.
+  const rarityOptions = useMemo(() => {
+    const present = new Set()
+    for (const card of cards) {
+      if (card.rarity) present.add(card.rarity)
+    }
+    const known = RARITY_ORDER.filter((r) => present.has(r))
+    const unknown = Array.from(present)
+      .filter((r) => !RARITY_ORDER.includes(r))
+      .sort()
+    return [...known, ...unknown]
+  }, [cards])
+
+  // Text search, the set dropdown, and the rarity dropdown all AND
+  // together. All cheap linear scans over the in-memory array, and
+  // re-running this only depends on the deferred (lagged) query plus the
+  // two dropdown filters, not on pagination.
   const filteredCards = useMemo(() => {
     const q = deferredQuery.trim().toLowerCase()
     return cards.filter((card) => {
       if (setSlug && card.setSlug !== setSlug) return false
+      if (rarity && card.rarity !== rarity) return false
       if (!q) return true
       return (
         card.nameEn?.toLowerCase().includes(q) ||
@@ -77,13 +118,13 @@ function App() {
         card.rarity?.toLowerCase().includes(q)
       )
     })
-  }, [cards, deferredQuery, setSlug])
+  }, [cards, deferredQuery, setSlug, rarity])
 
   // Whenever the effective filter changes, snap back to page 1 — otherwise
   // narrowing a search while sitting on page 40 could land on an empty page.
   useEffect(() => {
     setPage(1)
-  }, [deferredQuery, setSlug])
+  }, [deferredQuery, setSlug, rarity])
 
   const totalPages = Math.max(1, Math.ceil(filteredCards.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -93,7 +134,7 @@ function App() {
     [filteredCards, startIndex]
   )
 
-  const isFiltered = deferredQuery.trim().length > 0 || setSlug !== ''
+  const isFiltered = deferredQuery.trim().length > 0 || setSlug !== '' || rarity !== ''
   const rangeStart = filteredCards.length === 0 ? 0 : startIndex + 1
   const rangeEnd = Math.min(startIndex + PAGE_SIZE, filteredCards.length)
 
@@ -105,8 +146,10 @@ function App() {
         <div className="py-6">
           <SearchBar value={query} onChange={setQuery} />
 
-          <div className="mx-auto mt-3 flex max-w-xl justify-center px-4">
+          <div className="mx-auto mt-3 flex max-w-2xl flex-wrap items-start justify-center gap-2 px-4">
             <SetFilter options={setOptions} value={setSlug} onChange={setSetSlug} />
+            <RarityFilter options={rarityOptions} value={rarity} onChange={setRarity} />
+            <CurrencySelector value={currency} onChange={setCurrency} />
           </div>
 
           <div className="mx-auto mt-3 max-w-xl px-4 text-center text-xs text-slate-500">
@@ -149,7 +192,7 @@ function App() {
 
         {status === 'ready' && (
           <>
-            <CardGrid cards={pageCards} />
+            <CardGrid cards={pageCards} currency={currency} rates={rates} />
             <Pagination page={safePage} totalPages={totalPages} onChange={setPage} />
           </>
         )}

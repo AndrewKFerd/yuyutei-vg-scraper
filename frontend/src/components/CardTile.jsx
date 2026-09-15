@@ -1,8 +1,11 @@
 import { memo } from 'react'
 import RarityBadge from './RarityBadge'
+import { formatPrice } from '../currency'
 
-function CardTile({ card }) {
+function CardTile({ card, currency, rates }) {
   const inStock = card.stock > 0
+  const displayPrice =
+    currency && currency !== 'JPY' ? formatPrice(card.price, currency, rates) : card.priceDisplay
 
   return (
     <a
@@ -40,9 +43,7 @@ function CardTile({ card }) {
           {card.nameEn || card.nameJp}
         </span>
         <div className="mt-auto flex items-center justify-between pt-1">
-          <span className="text-sm font-bold text-blue-700">
-            {card.priceDisplay}
-          </span>
+          <span className="text-sm font-bold text-blue-700">{displayPrice}</span>
           <span
             className={`text-[11px] font-semibold ${
               inStock ? 'text-green-600' : 'text-red-500'
