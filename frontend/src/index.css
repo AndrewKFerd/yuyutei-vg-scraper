@@ -1,9 +1,25 @@
 @import "tailwindcss";
 
+/* Dark mode is toggled by a `.dark` class on <html> (see theme.js and the
+   inline bootstrap script in index.html), not by the OS media query alone,
+   so the user can override their system preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Brand palette: "brand" (blue, #5195E1 at 500) is the primary interactive
    color; "gold" (cream/gold, #eecf99 at 500) is the accent used for skill
-   text and top rarities. Both ramps share the base hex's hue/saturation. */
+   text and top rarities. Both ramps share the base hex's hue/saturation.
+
+   "night" is the dark-mode surface ramp: near-black with the brand blue's
+   hue (212) baked in, so dark surfaces read as deep navy rather than
+   neutral gray and the blue/gold foreground colors sit naturally on them. */
 @theme {
+  --color-night-950: hsl(212 42% 5%);
+  --color-night-900: hsl(212 36% 8%);
+  --color-night-800: hsl(212 30% 12%);
+  --color-night-700: hsl(212 24% 17%);
+  --color-night-600: hsl(212 20% 25%);
+  --color-night-500: hsl(212 16% 34%);
+
   --color-brand-50: hsl(212 85% 97%);
   --color-brand-100: hsl(212 80% 93%);
   --color-brand-200: hsl(212 78% 85%);
@@ -36,4 +52,14 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: var(--color-slate-50);
+}
+
+/* Paint the root too so overscroll/bounce areas and native form controls
+   (select popups, scrollbars) follow the theme instead of flashing white. */
+html.dark {
+  color-scheme: dark;
+}
+html.dark body {
+  background: var(--color-night-900);
 }

@@ -20,18 +20,18 @@ function Pagination({ page, totalPages, onChange }) {
         type="button"
         onClick={() => goTo(page - 1)}
         disabled={page <= 1}
-        className="rounded-full border border-slate-300 bg-white px-4 py-1.5 font-medium text-slate-700 shadow-sm transition hover:border-brand-400 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-700"
+        className="rounded-full border border-slate-300 bg-white px-4 py-1.5 font-medium text-slate-700 shadow-sm transition hover:border-brand-400 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-700 dark:border-night-600 dark:bg-night-800 dark:text-gold-500 dark:hover:border-brand-500 dark:hover:text-brand-400 dark:disabled:hover:border-night-600 dark:disabled:hover:text-gold-500"
       >
         Prev
       </button>
-      <span className="text-xs text-slate-500">
+      <span className="text-xs text-slate-500 dark:text-gold-500/70">
         Page {page} of {totalPages}
       </span>
       <button
         type="button"
         onClick={() => goTo(page + 1)}
         disabled={page >= totalPages}
-        className="rounded-full border border-slate-300 bg-white px-4 py-1.5 font-medium text-slate-700 shadow-sm transition hover:border-brand-400 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-700"
+        className="rounded-full border border-slate-300 bg-white px-4 py-1.5 font-medium text-slate-700 shadow-sm transition hover:border-brand-400 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-700 dark:border-night-600 dark:bg-night-800 dark:text-gold-500 dark:hover:border-brand-500 dark:hover:text-brand-400 dark:disabled:hover:border-night-600 dark:disabled:hover:text-gold-500"
       >
         Next
       </button>

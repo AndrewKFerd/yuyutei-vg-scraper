@@ -1,6 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { fetchCatalog, refreshCatalog } from './api'
 import { getRates } from './currency'
+import { applyTheme, getInitialTheme } from './theme'
 import Header from './components/Header'
 import SearchBar from './components/SearchBar'
 import SetFilter from './components/SetFilter'
@@ -37,6 +38,17 @@ function App() {
   const [currency, setCurrency] = useState('JPY')
   const [rates, setRates] = useState(null)
   const [selectedCard, setSelectedCard] = useState(null)
+  const [theme, setTheme] = useState(getInitialTheme)
+
+  // index.html already applied the initial theme before first paint; this
+  // keeps <html> in sync whenever the user toggles it afterwards.
+  useEffect(() => {
+    applyTheme(theme)
+  }, [theme])
+
+  const toggleTheme = useCallback(() => {
+    setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
+  }, [])
 
   // Keeps the input snappy: the text state updates immediately on every
   // keystroke, while the (potentially expensive) filtered grid re-render
@@ -156,8 +168,8 @@ function App() {
   const rangeEnd = Math.min(startIndex + PAGE_SIZE, filteredCards.length)
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
-      <Header meta={meta} />
+    <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-night-900">
+      <Header meta={meta} theme={theme} onToggleTheme={toggleTheme} />
 
       <main className="flex-1">
         <div className="py-6">
@@ -169,7 +181,7 @@ function App() {
             <CurrencySelector value={currency} onChange={setCurrency} />
           </div>
 
-          <div className="mx-auto mt-3 max-w-xl px-4 text-center text-xs text-slate-500">
+          <div className="mx-auto mt-3 max-w-xl px-4 text-center text-xs text-slate-500 dark:text-gold-500/70">
             {status === 'ready' &&
               (filteredCards.length === 0
                 ? isFiltered
@@ -181,7 +193,7 @@ function App() {
           </div>
 
           {status === 'ready' && meta && (
-            <div className="mx-auto mt-1 max-w-xl px-4 text-center text-[11px] text-slate-400">
+            <div className="mx-auto mt-1 max-w-xl px-4 text-center text-[11px] text-slate-400 dark:text-gold-500/50">
               {meta.fromCache
                 ? 'Loaded from today’s local cache.'
                 : 'Freshly loaded — now cached for the rest of today.'}{' '}
@@ -189,7 +201,7 @@ function App() {
                 type="button"
                 onClick={handleRefresh}
                 disabled={isRefreshing}
-                className="font-medium text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-slate-400"
+                className="font-medium text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 dark:text-brand-400 dark:disabled:text-night-500"
               >
                 {isRefreshing ? 'Refreshing…' : 'Refresh now'}
               </button>
@@ -199,14 +211,14 @@ function App() {
 
         {status === 'loading' && (
           <div>
-            <p className="pb-4 text-center text-sm text-slate-500">
+            <p className="pb-4 text-center text-sm text-slate-500 dark:text-gold-500/70">
               Loading full card catalog…
             </p>
             <div className="grid grid-cols-2 gap-3 px-4 pb-10 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
               {Array.from({ length: 16 }).map((_, i) => (
                 <div
                   key={i}
-                  className="aspect-[100/140] w-full animate-pulse rounded-md bg-slate-200"
+                  className="aspect-[100/140] w-full animate-pulse rounded-md bg-slate-200 dark:bg-night-700"
                 />
               ))}
             </div>
@@ -218,8 +230,8 @@ function App() {
             <p className="text-sm font-semibold text-red-600">
               Couldn&apos;t load cards.
             </p>
-            <p className="mt-2 text-xs text-slate-500">{errorMessage}</p>
-            <p className="mt-4 text-xs text-slate-400">Reload the page to try again.</p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-gold-500/70">{errorMessage}</p>
+            <p className="mt-4 text-xs text-slate-400 dark:text-gold-500/50">Reload the page to try again.</p>
           </div>
         )}
 

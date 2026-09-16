@@ -5,6 +5,19 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Yuyu-tei Card Search</title>
+    <script>
+      // Apply the saved/OS theme before first paint so there's no flash of
+      // the wrong theme. Mirrors src/theme.js — keep them in sync.
+      (function () {
+        try {
+          var t = localStorage.getItem('yuyutei:theme');
+          var dark =
+            t === 'dark' ||
+            (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

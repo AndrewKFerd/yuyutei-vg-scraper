@@ -57,7 +57,7 @@ function SetFilter({ options, value, onChange }) {
         }}
         placeholder="All Sets"
         aria-label="Search and filter by set"
-        className="w-full rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100"
+        className="w-full rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-100 dark:border-night-600 dark:bg-night-800 dark:text-gold-500 dark:placeholder:text-gold-500/40 dark:focus:border-brand-500 dark:focus:ring-brand-500/20"
       />
       {value && !open && (
         <button
@@ -67,24 +67,24 @@ function SetFilter({ options, value, onChange }) {
             clear()
           }}
           aria-label="Clear set filter"
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-gold-500/60 dark:hover:text-gold-500"
         >
           ×
         </button>
       )}
       {open && (
-        <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg">
+        <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-night-600 dark:bg-night-800">
           <li
             onMouseDown={(e) => {
               e.preventDefault()
               clear()
             }}
-            className="cursor-pointer px-3 py-1.5 text-slate-500 hover:bg-brand-50"
+            className="cursor-pointer px-3 py-1.5 text-slate-500 hover:bg-brand-50 dark:text-gold-500/70 dark:hover:bg-night-700"
           >
             All Sets
           </li>
           {suggestions.length === 0 && (
-            <li className="px-3 py-1.5 text-slate-400">No matching sets</li>
+            <li className="px-3 py-1.5 text-slate-400 dark:text-gold-500/50">No matching sets</li>
           )}
           {suggestions.map((slug) => (
             <li
@@ -93,15 +93,17 @@ function SetFilter({ options, value, onChange }) {
                 e.preventDefault()
                 select(slug)
               }}
-              className={`cursor-pointer px-3 py-1.5 font-mono hover:bg-brand-50 ${
-                slug === value ? 'bg-brand-50 font-semibold text-brand-700' : 'text-slate-700'
+              className={`cursor-pointer px-3 py-1.5 font-mono hover:bg-brand-50 dark:hover:bg-night-700 ${
+                slug === value
+                  ? 'bg-brand-50 font-semibold text-brand-700 dark:bg-night-700 dark:text-brand-400'
+                  : 'text-slate-700 dark:text-gold-500'
               }`}
             >
               {slug}
             </li>
           ))}
           {options.length > MAX_SUGGESTIONS && suggestions.length === MAX_SUGGESTIONS && (
-            <li className="px-3 py-1 text-[11px] text-slate-400">
+            <li className="px-3 py-1 text-[11px] text-slate-400 dark:text-gold-500/50">
               Keep typing to narrow further…
             </li>
           )}

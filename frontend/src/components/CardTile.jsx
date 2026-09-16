@@ -12,11 +12,11 @@ function CardTile({ card, currency, rates, onSelect }) {
       type="button"
       onClick={() => onSelect(card)}
       title={card.nameEn || card.nameJp}
-      className={`group flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md hover:shadow-brand-100 ${
+      className={`group flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md hover:shadow-brand-100 dark:border-night-600 dark:bg-night-800 dark:hover:border-brand-500 dark:hover:shadow-brand-900/40 ${
         inStock ? '' : 'opacity-60 hover:opacity-90'
       }`}
     >
-      <div className="relative aspect-[100/140] w-full overflow-hidden bg-slate-100">
+      <div className="relative aspect-[100/140] w-full overflow-hidden bg-slate-100 dark:bg-night-700">
         <img
           src={card.imageUrl}
           alt={card.nameEn || card.nameJp}
@@ -35,14 +35,14 @@ function CardTile({ card, currency, rates, onSelect }) {
       </div>
 
       <div className="flex flex-1 flex-col gap-1 p-2">
-        <span className="truncate font-mono text-[11px] text-slate-500">
+        <span className="truncate font-mono text-[11px] text-slate-500 dark:text-gold-500/60">
           {card.setCode}
         </span>
-        <span className="line-clamp-2 text-xs font-medium leading-snug text-slate-800">
+        <span className="line-clamp-2 text-xs font-medium leading-snug text-slate-800 dark:text-gold-500">
           {card.nameEn || card.nameJp}
         </span>
         <div className="mt-auto flex items-center justify-between pt-1">
-          <span className="text-sm font-bold text-brand-700">{displayPrice}</span>
+          <span className="text-sm font-bold text-brand-700 dark:text-brand-400">{displayPrice}</span>
           <span
             className={`text-[11px] font-semibold ${
               inStock ? 'text-green-600' : 'text-red-500'

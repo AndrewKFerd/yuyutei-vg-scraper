@@ -3,7 +3,7 @@ import CardTile from './CardTile'
 function CardGrid({ cards, currency, rates, onSelect }) {
   if (cards.length === 0) {
     return (
-      <div className="py-16 text-center text-sm text-slate-400">
+      <div className="py-16 text-center text-sm text-slate-400 dark:text-gold-500/50">
         No cards match your search.
       </div>
     )
