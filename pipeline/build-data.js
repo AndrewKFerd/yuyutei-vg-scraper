@@ -14,9 +14,10 @@ const path = require('path');
 
 const { translateCardName } = require('./translate-engine');
 const { findOfficialName } = require('./match-official');
+const { groupKey } = require('./card-group');
 
 const CATALOG_PATH = path.join(__dirname, 'data', 'catalog-raw.json');
-const SKILLS_PATH = path.join(__dirname, 'data', 'card-skills-raw.json');
+const SKILLS_PATH = path.join(__dirname, 'data', 'card-details-raw.json');
 const OUT_PATH = path.join(__dirname, '..', 'frontend', 'public', 'data', 'cards.json');
 
 function loadSkillsIndex() {
@@ -69,7 +70,12 @@ function main() {
       grade = official.grade;
       power = official.power;
       shield = official.shield;
-      skillTextEn = official.skillText;
+      // cf-vanguard delivers all abilities as one run-on line; the printed
+      // card starts each on its own line, so restore that at ability
+      // keywords (the modal renders with whitespace-pre-line).
+      skillTextEn = official.skillText
+        ? official.skillText.replace(/(?<=\S)\s*(\[(?:CONT|ACT|AUTO)\])/g, '\n$1')
+        : null;
     } else {
       const local = translateCardName(c.nameJp);
       nameEn = local.nameEn;
@@ -79,12 +85,14 @@ function main() {
     sourceCounts[translationSource] = (sourceCounts[translationSource] || 0) + 1;
     if (skillTextEn) skillTextEnCount++;
 
-    // Per-card detail scraped from yuyu-tei (scrape-card-detail.js). The
-    // stat line fills in whatever the official match didn't provide -- for
-    // the ~78% of cards with no English release this is the only source.
-    // Japanese labels are kept as-is for text fields (kind/clan) so the UI
-    // isn't showing a machine-mangled "translation" of a proper noun.
-    const detail = skillsIndex[`${c.setSlug}/${c.id}`] || null;
+    // Per-card detail scraped from yuyu-tei (scrape-card-detail.js), keyed
+    // by card identity rather than listing so every foil/parallel variant
+    // shares the one fetched result. The stat line fills in whatever the
+    // official match didn't provide -- for the ~78% of cards with no
+    // English release this is the only source. Japanese labels are kept
+    // as-is for text fields (kind/clan) so the UI isn't showing a
+    // machine-mangled "translation" of a proper noun.
+    const detail = skillsIndex[groupKey(c)] || null;
     const skillTextJp = detail?.effect || null;
     const flavorJp = detail?.flavor || null;
     if (skillTextJp) skillTextJpCount++;

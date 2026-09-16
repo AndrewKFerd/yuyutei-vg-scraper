@@ -30,9 +30,12 @@
  *
  * ## Runtime
  *
- * One request per card (~28k). Runs WORKERS concurrent fetchers, each
- * pacing itself by DELAY_MS, and checkpoints to disk every CHECKPOINT_EVERY
- * cards. A re-run skips cards already fetched (hit or confirmed-empty), so
+ * One request per *card*, not per listing: foil/parallel/signed variants
+ * share identical text, so listings are grouped by card-group.js's key
+ * (~17k groups for ~28k listings) and one representative page is fetched
+ * per group. Output is keyed by that group key; build-data.js copies each
+ * result to every listing in the group. Checkpoints to disk every
+ * CHECKPOINT_EVERY cards. A re-run skips cards already fetched (hit or confirmed-empty), so
  * an interrupted run resumes. --force refetches everything.
  *
  * Usage:
@@ -45,15 +48,17 @@ const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
 const { createCookieJar, browserGet } = require('./http-client');
+const { groupKey, isPlainPrinting } = require('./card-group');
 
 const SITE_ROOT = 'https://yuyu-tei.jp/';
 
-// yuyu-tei starts answering HTTP 429 somewhere above ~5 req/s sustained
-// (measured: 3 workers @ 350ms tripped it within a minute). Two workers at
-// 650ms is ~3 req/s. On any 429 every worker also backs off for COOLDOWN_MS
-// before continuing, so a burst self-corrects instead of burning retries.
-const WORKERS = 2;
-const DELAY_MS = 650;
+// yuyu-tei's limiter is unforgiving: 3 workers @ 350ms (~8 req/s) tripped
+// HTTP 429 within a minute and then blocked the IP for ~12 minutes, and
+// once flagged even ~3 req/s re-tripped it immediately. One worker at
+// ~0.9 req/s is the pace that holds. On any 429 the worker backs off with
+// a doubling cooldown rather than burning retries. Slow, but resumable.
+const WORKERS = 1;
+const DELAY_MS = 1100;
 const COOLDOWN_MS = 20000;
 const MAX_RETRIES = 3;
 const RETRY_BACKOFF_MS = 3000;
@@ -61,7 +66,7 @@ const PROGRESS_EVERY = 100;
 const CHECKPOINT_EVERY = 300;
 
 const CATALOG_PATH = path.join(__dirname, 'data', 'catalog-raw.json');
-const OUTPUT_PATH = path.join(__dirname, 'data', 'card-skills-raw.json');
+const OUTPUT_PATH = path.join(__dirname, 'data', 'card-details-raw.json');
 
 // Japanese <th> label -> output field. Anything not listed is ignored.
 const STAT_LABELS = {
@@ -228,12 +233,22 @@ async function main() {
   // table but no effect (typically a set yuyu-tei hasn't filled in yet) are
   // stored so their stats are usable, but are retried on the next run in
   // case the text has since appeared.
-  let queue = (limit ? catalog.cards.slice(0, limit) : catalog.cards).filter((c) => {
-    const prev = skills[`${c.setSlug}/${c.id}`];
+  // One representative listing per card group, preferring the plain
+  // (non-variant) printing. Catalog order is newest-set-first, so the
+  // cards people are most likely to look at get their text earliest.
+  const reps = new Map();
+  for (const c of catalog.cards) {
+    const k = groupKey(c);
+    const cur = reps.get(k);
+    if (!cur || (!isPlainPrinting(cur) && isPlainPrinting(c))) reps.set(k, c);
+  }
+  let queue = Array.from(reps.values()).filter((c) => {
+    const prev = skills[groupKey(c)];
     return !(prev && prev.effect);
   });
+  if (limit) queue = queue.slice(0, limit);
 
-  console.log(`${queue.length} cards to fetch (${startedWith} already in checkpoint).`);
+  console.log(`${queue.length} cards to fetch (${reps.size} unique cards across ${catalog.cards.length} listings; ${startedWith} already in checkpoint).`);
 
   const jar = createCookieJar();
   try {
@@ -248,7 +263,7 @@ async function main() {
   async function worker() {
     while (cursor < queue.length) {
       const card = queue[cursor++];
-      const key = `${card.setSlug}/${card.id}`;
+      const key = groupKey(card);
       if (!card.detailUrl) continue;
 
       await sleep(DELAY_MS);
