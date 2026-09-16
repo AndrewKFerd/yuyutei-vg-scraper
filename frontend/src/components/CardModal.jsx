@@ -85,53 +85,75 @@ function CardModal({ card, currency, rates, onClose }) {
         role="dialog"
         aria-modal="true"
         aria-label={card.nameEn || card.nameJp}
-        className="grid max-h-[90vh] w-full max-w-2xl grid-cols-1 gap-5 overflow-y-auto rounded-lg bg-white p-5 shadow-xl sm:grid-cols-[200px_1fr] sm:p-6"
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl"
       >
-        <div className="relative aspect-[100/140] w-full overflow-hidden rounded-md bg-slate-100">
-          <img
-            src={card.imageUrl}
-            alt={card.nameEn || card.nameJp}
-            className="h-full w-full object-cover"
-          />
-          <div className="absolute left-1.5 top-1.5">
-            <RarityBadge rarity={card.rarity} />
+        {/* Scrollable content -- everything EXCEPT price/stock/the outbound
+            link, which live in the sticky footer below instead. Card art
+            plus (once scrape-card-detail.js is enabled) skill text can run
+            taller than a phone's viewport, and on a real device that used
+            to push the outbound link below the modal's own clipped edge --
+            tapping where it visually should be actually hit the backdrop
+            behind it (verified: elementFromPoint at the link's un-scrolled
+            position returned the backdrop div, not the link), which just
+            closed the modal instead of opening anything. Keeping this
+            footer outside the scroll container means the link is always
+            reachable regardless of how tall the content above it gets. */}
+        <div className="flex min-h-0 flex-col gap-5 overflow-y-auto p-5 sm:grid sm:grid-cols-[200px_1fr] sm:p-6">
+          <div className="relative aspect-[100/140] w-36 max-h-[38vh] self-center overflow-hidden rounded-md bg-slate-100 sm:w-full sm:max-h-none sm:self-auto">
+            <img
+              src={card.imageUrl}
+              alt={card.nameEn || card.nameJp}
+              className="h-full w-full object-cover"
+            />
+            <div className="absolute left-1.5 top-1.5">
+              <RarityBadge rarity={card.rarity} />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-bold leading-snug text-slate-900">
+                  {card.nameEn || card.nameJp}
+                </h2>
+                {card.nameEn && card.nameJp && (
+                  <p lang="ja" className="mt-0.5 text-sm text-slate-500">
+                    {card.nameJp}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                  <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs text-slate-500">
+              <span>{card.setCode}</span>
+              <StatPill value={card.kind} />
+              <StatPill value={card.clan} />
+              <StatPill value={card.grade != null ? `Grade ${card.grade}` : null} />
+              <StatPill value={card.power != null ? `Power ${card.power}` : null} />
+              <StatPill value={card.shield != null ? `Shield ${card.shield}` : null} />
+            </div>
+
+            <div>
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Skill
+              </h3>
+              <SkillText card={card} />
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-col gap-3">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h2 className="text-lg font-bold leading-snug text-slate-900">
-                {card.nameEn || card.nameJp}
-              </h2>
-              {card.nameEn && card.nameJp && (
-                <p lang="ja" className="mt-0.5 text-sm text-slate-500">
-                  {card.nameJp}
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-            >
-              <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" />
-              </svg>
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs text-slate-500">
-            <span>{card.setCode}</span>
-            <StatPill value={card.kind} />
-            <StatPill value={card.clan} />
-            <StatPill value={card.grade != null ? `Grade ${card.grade}` : null} />
-            <StatPill value={card.power != null ? `Power ${card.power}` : null} />
-            <StatPill value={card.shield != null ? `Shield ${card.shield}` : null} />
-          </div>
-
-          <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 sm:px-6">
+          <div className="flex items-center gap-3">
             <span className="text-xl font-bold text-brand-700">{displayPrice}</span>
             <span
               className={`text-xs font-semibold ${inStock ? 'text-green-600' : 'text-red-500'}`}
@@ -140,19 +162,12 @@ function CardModal({ card, currency, rates, onClose }) {
             </span>
           </div>
 
-          <div>
-            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Skill
-            </h3>
-            <SkillText card={card} />
-          </div>
-
           {card.detailUrl && (
             <a
               href={card.detailUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-auto text-xs font-medium text-brand-600 hover:underline"
+              className="-my-2 inline-block py-2 text-xs font-medium text-brand-600 hover:underline"
             >
               View original listing on Yuyu-tei ↗
             </a>
