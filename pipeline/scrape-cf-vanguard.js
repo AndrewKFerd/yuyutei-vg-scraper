@@ -51,9 +51,7 @@
 const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
-
-const USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
+const { createCookieJar, browserGet } = require('./http-client');
 
 const BASE = 'https://en.cf-vanguard.com';
 const SEARCH_URL = `${BASE}/cardlist/cardsearch/`;
@@ -83,6 +81,7 @@ const FAMILIES = [
 const OUTPUT_PATH = path.join(__dirname, 'data', 'cf-vanguard-raw.json');
 
 let requestsMade = 0;
+const jar = createCookieJar();
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -130,8 +129,7 @@ async function fetchWithRetry(url) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     requestsMade++;
     try {
-      const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await browserGet(url, jar, SEARCH_URL);
       return await res.text();
     } catch (err) {
       const isLastAttempt = attempt === MAX_RETRIES;
@@ -287,6 +285,15 @@ async function main() {
   const allCards = [];
   const seen = new Set();
   const familySummaries = [];
+
+  // Visit the site root first, like a real browser would before searching --
+  // also plants any session cookie the search endpoint expects echoed back.
+  try {
+    await browserGet(BASE, jar);
+  } catch (err) {
+    console.warn(`[warn] Warm-up request to ${BASE} failed (${err.message}). Continuing anyway.`);
+  }
+  await sleep(DELAY_MS);
 
   for (const family of FAMILIES) {
     if (requestsMade >= MAX_TOTAL_REQUESTS) {

@@ -13,8 +13,13 @@
  * elsewhere (scrape-catalog.js, and the older backend/scraper.js in git
  * history) since the detail-page markup itself could not be inspected: this
  * machine's network policy (a FortiGuard web filter, category "Games")
- * blocks yuyu-tei.jp outright, so no request to the site succeeds here at
- * all -- not even a single manual GET to look at the HTML.
+ * blocks yuyu-tei.jp outright. Separately, yuyu-tei's own bot defenses have
+ * also been observed hard-blocking (HTTP 403) requests from GitHub Actions'
+ * runner IPs after the first couple of requests -- see http-client.js for
+ * the browser-header/cookie-jar mitigation shared with the other scrapers.
+ * That mitigation is unverified for this specific script too, for the same
+ * reason: no request to yuyu-tei.jp has ever succeeded from a machine this
+ * was written on.
  *
  * Before a full run, smoke-test on a handful of cards from a network that
  * can actually reach yuyu-tei.jp:
@@ -44,9 +49,9 @@
 const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
+const { createCookieJar, browserGet } = require('./http-client');
 
-const USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
+const SITE_ROOT = 'https://yuyu-tei.jp/';
 
 const DELAY_MS = 400;
 const MAX_RETRIES = 2;
@@ -87,11 +92,10 @@ function parseArgs() {
   return { limit, force };
 }
 
-async function fetchWithRetry(url) {
+async function fetchWithRetry(url, jar) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await browserGet(url, jar, SITE_ROOT);
       return await res.text();
     } catch (err) {
       const isLastAttempt = attempt === MAX_RETRIES;
@@ -168,6 +172,14 @@ async function main() {
   const skills = loadCheckpoint(force);
   const startedWith = Object.keys(skills).length;
 
+  const jar = createCookieJar();
+  try {
+    await browserGet(SITE_ROOT, jar);
+  } catch (err) {
+    console.warn(`[warn] Warm-up request to ${SITE_ROOT} failed (${err.message}). Continuing anyway.`);
+  }
+  await sleep(DELAY_MS);
+
   let fetched = 0;
   let hits = 0;
   let misses = 0;
@@ -183,7 +195,7 @@ async function main() {
     }
 
     await sleep(DELAY_MS);
-    const html = await fetchWithRetry(card.detailUrl);
+    const html = await fetchWithRetry(card.detailUrl, jar);
     fetched++;
 
     if (html === null) {

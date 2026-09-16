@@ -13,10 +13,9 @@
 const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
+const { createCookieJar, browserGet } = require('./http-client');
 
-const USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
-
+const SITE_ROOT = 'https://yuyu-tei.jp/';
 const SEARCH_URL = 'https://yuyu-tei.jp/sell/vg/s/search';
 const DELAY_MS = 400; // politeness delay between page requests
 const MAX_RETRIES = 2;
@@ -74,16 +73,15 @@ function extractSetSlugFromUrl(url) {
 
 /**
  * Fetch a single search page with retries. Returns the HTML text, or null
- * if all attempts failed.
+ * if all attempts failed. `jar` carries cookies across the whole crawl and
+ * `referer` is the previous page's URL, so the request sequence reads like
+ * one continuous browser session instead of independent anonymous hits.
  */
-async function fetchPageWithRetry(page) {
+async function fetchPageWithRetry(page, jar, referer) {
   const url = buildUrl(page);
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
+      const res = await browserGet(url, jar, referer);
       return await res.text();
     } catch (err) {
       const isLastAttempt = attempt === MAX_RETRIES;
@@ -165,8 +163,22 @@ async function scrapeCatalog() {
 
   console.log('Starting full VG catalog crawl...');
 
+  const jar = createCookieJar();
+  // Visit the homepage first, like a real browser would before searching --
+  // this is also what plants any session cookie the search endpoint later
+  // expects to see echoed back.
+  try {
+    await browserGet(SITE_ROOT, jar);
+  } catch (err) {
+    console.warn(`[warn] Warm-up request to ${SITE_ROOT} failed (${err.message}). Continuing anyway.`);
+  }
+  await sleep(DELAY_MS);
+
+  let referer = SITE_ROOT;
+
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const html = await fetchPageWithRetry(page);
+    const html = await fetchPageWithRetry(page, jar, referer);
+    referer = buildUrl(page);
 
     if (html === null) {
       // Failed after retries; move on to the next page rather than aborting.
