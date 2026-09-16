@@ -4,12 +4,12 @@ import { memo } from 'react'
 // back to the neutral "default" style below. Treated as an open string on
 // purpose since yuyu-tei adds new rarity codes over time.
 const RARITY_STYLES = {
-  SEC: 'bg-amber-400 text-amber-950',
-  SP: 'bg-amber-400 text-amber-950',
+  SEC: 'bg-gold-500 text-gold-900',
+  SP: 'bg-gold-500 text-gold-900',
   FFR: 'bg-purple-500 text-white',
   SR: 'bg-purple-500 text-white',
   RRR: 'bg-pink-500 text-white',
-  RR: 'bg-blue-500 text-white',
+  RR: 'bg-brand-500 text-white',
   R: 'bg-green-500 text-white',
   C: 'bg-gray-400 text-gray-900',
 }

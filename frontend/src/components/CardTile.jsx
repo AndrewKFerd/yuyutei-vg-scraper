@@ -2,18 +2,17 @@ import { memo } from 'react'
 import RarityBadge from './RarityBadge'
 import { formatPrice } from '../currency'
 
-function CardTile({ card, currency, rates }) {
+function CardTile({ card, currency, rates, onSelect }) {
   const inStock = card.stock > 0
   const displayPrice =
     currency && currency !== 'JPY' ? formatPrice(card.price, currency, rates) : card.priceDisplay
 
   return (
-    <a
-      href={card.detailUrl}
-      target="_blank"
-      rel="noopener noreferrer"
+    <button
+      type="button"
+      onClick={() => onSelect(card)}
       title={card.nameEn || card.nameJp}
-      className={`group flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+      className={`group flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md hover:shadow-brand-100 ${
         inStock ? '' : 'opacity-60 hover:opacity-90'
       }`}
     >
@@ -43,7 +42,7 @@ function CardTile({ card, currency, rates }) {
           {card.nameEn || card.nameJp}
         </span>
         <div className="mt-auto flex items-center justify-between pt-1">
-          <span className="text-sm font-bold text-blue-700">{displayPrice}</span>
+          <span className="text-sm font-bold text-brand-700">{displayPrice}</span>
           <span
             className={`text-[11px] font-semibold ${
               inStock ? 'text-green-600' : 'text-red-500'
@@ -53,7 +52,7 @@ function CardTile({ card, currency, rates }) {
           </span>
         </div>
       </div>
-    </a>
+    </button>
   )
 }
 

@@ -1,5 +1,32 @@
 @import "tailwindcss";
 
+/* Brand palette: "brand" (blue, #5195E1 at 500) is the primary interactive
+   color; "gold" (cream/gold, #eecf99 at 500) is the accent used for skill
+   text and top rarities. Both ramps share the base hex's hue/saturation. */
+@theme {
+  --color-brand-50: hsl(212 85% 97%);
+  --color-brand-100: hsl(212 80% 93%);
+  --color-brand-200: hsl(212 78% 85%);
+  --color-brand-300: hsl(212 75% 75%);
+  --color-brand-400: hsl(212 73% 67%);
+  --color-brand-500: #5195e1;
+  --color-brand-600: hsl(212 65% 52%);
+  --color-brand-700: hsl(212 68% 44%);
+  --color-brand-800: hsl(212 70% 35%);
+  --color-brand-900: hsl(212 72% 27%);
+
+  --color-gold-50: hsl(38 85% 97%);
+  --color-gold-100: hsl(38 78% 93%);
+  --color-gold-200: hsl(38 75% 87%);
+  --color-gold-300: hsl(38 73% 82%);
+  --color-gold-400: hsl(38 72% 80%);
+  --color-gold-500: #eecf99;
+  --color-gold-600: hsl(38 60% 65%);
+  --color-gold-700: hsl(38 55% 52%);
+  --color-gold-800: hsl(38 50% 40%);
+  --color-gold-900: hsl(38 48% 30%);
+}
+
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

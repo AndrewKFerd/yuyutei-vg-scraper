@@ -20,7 +20,7 @@ function Pagination({ page, totalPages, onChange }) {
         type="button"
         onClick={() => goTo(page - 1)}
         disabled={page <= 1}
-        className="rounded-full border border-slate-300 bg-white px-4 py-1.5 font-medium text-slate-700 shadow-sm transition hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-700"
+        className="rounded-full border border-slate-300 bg-white px-4 py-1.5 font-medium text-slate-700 shadow-sm transition hover:border-brand-400 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-700"
       >
         Prev
       </button>
@@ -31,7 +31,7 @@ function Pagination({ page, totalPages, onChange }) {
         type="button"
         onClick={() => goTo(page + 1)}
         disabled={page >= totalPages}
-        className="rounded-full border border-slate-300 bg-white px-4 py-1.5 font-medium text-slate-700 shadow-sm transition hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-700"
+        className="rounded-full border border-slate-300 bg-white px-4 py-1.5 font-medium text-slate-700 shadow-sm transition hover:border-brand-400 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-700"
       >
         Next
       </button>

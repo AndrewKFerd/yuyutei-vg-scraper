@@ -7,7 +7,7 @@ function SearchBar({ value, onChange }) {
         onChange={(e) => onChange(e.target.value)}
         placeholder="Insert card name"
         autoFocus
-        className="w-full rounded-full border border-slate-300 bg-white px-5 py-3 text-base text-slate-800 shadow-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+        className="w-full rounded-full border border-slate-300 bg-white px-5 py-3 text-base text-slate-800 shadow-sm outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100"
       />
     </div>
   )

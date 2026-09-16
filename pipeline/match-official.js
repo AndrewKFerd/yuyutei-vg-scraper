@@ -118,10 +118,12 @@ function invalidateCache() {
 /**
  * @param {string} setCode  yuyu-tei JP set code, e.g. "DZ-BT16/SEC01"
  * @param {string} nameJp   yuyu-tei JP card name (accepted, not currently used — see file header)
- * @returns {{nameEn: string, confidence: 'high', cfCode: string} | null} 'medium' was
- *   considered (e.g. guessing foil-parallel<->base-card correspondence by number) but
- *   dropped as unsafe once checked against real data — see file header — so this only
- *   ever returns 'high' or null.
+ * @returns {{nameEn: string, confidence: 'high', cfCode: string, kind: ?string,
+ *   clan: ?string, grade: ?number, power: ?number, shield: ?number,
+ *   skillText: ?string} | null} 'medium' was considered (e.g. guessing
+ *   foil-parallel<->base-card correspondence by number) but dropped as unsafe
+ *   once checked against real data — see file header — so this only ever
+ *   returns 'high' or null.
  */
 function findOfficialName(setCode, nameJp) {
   if (!setCode || typeof setCode !== 'string') return null;
@@ -141,6 +143,12 @@ function findOfficialName(setCode, nameJp) {
     nameEn: hit.nameEn,
     confidence: 'high',
     cfCode: hit.cfCode,
+    kind: hit.kind ?? null,
+    clan: hit.clan ?? null,
+    grade: hit.grade ?? null,
+    power: hit.power ?? null,
+    shield: hit.shield ?? null,
+    skillText: hit.skillText ?? null,
   };
 }
 

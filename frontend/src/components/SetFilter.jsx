@@ -57,7 +57,7 @@ function SetFilter({ options, value, onChange }) {
         }}
         placeholder="All Sets"
         aria-label="Search and filter by set"
-        className="w-full rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+        className="w-full rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100"
       />
       {value && !open && (
         <button
@@ -79,7 +79,7 @@ function SetFilter({ options, value, onChange }) {
               e.preventDefault()
               clear()
             }}
-            className="cursor-pointer px-3 py-1.5 text-slate-500 hover:bg-blue-50"
+            className="cursor-pointer px-3 py-1.5 text-slate-500 hover:bg-brand-50"
           >
             All Sets
           </li>
@@ -93,8 +93,8 @@ function SetFilter({ options, value, onChange }) {
                 e.preventDefault()
                 select(slug)
               }}
-              className={`cursor-pointer px-3 py-1.5 font-mono hover:bg-blue-50 ${
-                slug === value ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-700'
+              className={`cursor-pointer px-3 py-1.5 font-mono hover:bg-brand-50 ${
+                slug === value ? 'bg-brand-50 font-semibold text-brand-700' : 'text-slate-700'
               }`}
             >
               {slug}

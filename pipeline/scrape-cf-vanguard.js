@@ -183,10 +183,17 @@ function parseCards(html) {
     const grade = gradeMatch ? parseInt(gradeMatch[1], 10) : null;
     const powerMatch = statusText.match(/Power\s*(\d+)/i);
     const power = powerMatch ? parseInt(powerMatch[1], 10) : null;
+    const shieldMatch = statusText.match(/Shield\s*([\d,]+)/i);
+    const shield = shieldMatch ? parseInt(shieldMatch[1].replace(/,/g, ''), 10) : null;
+
+    // The card's full ability/rules text sits in a <p> right after the
+    // status line, inside the same `.text` block -- present in view=text
+    // but simply never read out until now.
+    const skillText = $a.find('div.text p').first().text().trim() || null;
 
     if (!cfCode || !nameEn) return;
 
-    cards.push({ cfCode, nameEn, kind, clan, grade, power, imageUrl });
+    cards.push({ cfCode, nameEn, kind, clan, grade, power, shield, skillText, imageUrl });
   });
 
   return cards;

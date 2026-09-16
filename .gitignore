@@ -4,5 +4,6 @@ dist/
 *.log
 pipeline/data/catalog-raw.json
 pipeline/data/cf-vanguard-raw.json
+pipeline/data/card-skills-raw.json
 .vercel
 .env*

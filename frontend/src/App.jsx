@@ -7,6 +7,7 @@ import SetFilter from './components/SetFilter'
 import RarityFilter from './components/RarityFilter'
 import CurrencySelector from './components/CurrencySelector'
 import CardGrid from './components/CardGrid'
+import CardModal from './components/CardModal'
 import Pagination from './components/Pagination'
 import Footer from './components/Footer'
 
@@ -17,13 +18,11 @@ const RARITY_ORDER = ['SEC', 'SP', 'FFR', 'SR', 'RRR', 'RR', 'R', 'C']
 
 // The catalog now spans the entire Vanguard card range (tens of thousands
 // of rows), so we never render every matching card's <img> at once —
-// results are sliced into fixed-size pages client-side. 150 keeps a page
-// comfortably under a second to paint on modest hardware while still
-// feeling like "a lot of cards" rather than a trickle. No virtualization
+// results are sliced into fixed-size pages client-side. No virtualization
 // library needed: plain slicing is simpler, has zero new dependencies, and
 // is plenty fast since the expensive part (filtering the in-memory array)
 // is already memoized separately from pagination.
-const PAGE_SIZE = 150
+const PAGE_SIZE = 50
 
 function App() {
   const [cards, setCards] = useState([])
@@ -37,6 +36,7 @@ function App() {
   const [page, setPage] = useState(1)
   const [currency, setCurrency] = useState('JPY')
   const [rates, setRates] = useState(null)
+  const [selectedCard, setSelectedCard] = useState(null)
 
   // Keeps the input snappy: the text state updates immediately on every
   // keystroke, while the (potentially expensive) filtered grid re-render
@@ -189,7 +189,7 @@ function App() {
                 type="button"
                 onClick={handleRefresh}
                 disabled={isRefreshing}
-                className="font-medium text-blue-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-slate-400"
+                className="font-medium text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-slate-400"
               >
                 {isRefreshing ? 'Refreshing…' : 'Refresh now'}
               </button>
@@ -225,13 +225,25 @@ function App() {
 
         {status === 'ready' && (
           <>
-            <CardGrid cards={pageCards} currency={currency} rates={rates} />
+            <CardGrid
+              cards={pageCards}
+              currency={currency}
+              rates={rates}
+              onSelect={setSelectedCard}
+            />
             <Pagination page={safePage} totalPages={totalPages} onChange={setPage} />
           </>
         )}
       </main>
 
       <Footer />
+
+      <CardModal
+        card={selectedCard}
+        currency={currency}
+        rates={rates}
+        onClose={() => setSelectedCard(null)}
+      />
     </div>
   )
 }

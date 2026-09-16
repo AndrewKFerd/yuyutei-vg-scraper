@@ -16,7 +16,21 @@ const { translateCardName } = require('./translate-engine');
 const { findOfficialName } = require('./match-official');
 
 const CATALOG_PATH = path.join(__dirname, 'data', 'catalog-raw.json');
+const SKILLS_PATH = path.join(__dirname, 'data', 'card-skills-raw.json');
 const OUT_PATH = path.join(__dirname, '..', 'frontend', 'public', 'data', 'cards.json');
+
+function loadSkillsIndex() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(SKILLS_PATH, 'utf8'));
+    return raw.skills || {};
+  } catch (err) {
+    console.warn(
+      `[build-data] No ${SKILLS_PATH} found (${err.message}) -- cards will have no Japanese ` +
+      'skill text. Run scrape-card-detail.js first if you want it.'
+    );
+    return {};
+  }
+}
 
 // Both fields end up as raw `<a href>`/`<img src>` values in the frontend.
 // Cheap belt-and-suspenders check against a compromised/malformed source
@@ -30,17 +44,32 @@ function sanitizeUrl(url) {
 
 function main() {
   const raw = JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf8'));
+  const skillsIndex = loadSkillsIndex();
   const sourceCounts = { official: 0, glossary: 0, romaji: 0, mixed: 0, passthrough: 0 };
   let droppedUrls = 0;
+  let skillTextEnCount = 0;
+  let skillTextJpCount = 0;
 
   const cards = raw.cards.map((c) => {
     let nameEn;
     let translationSource;
+    let kind = null;
+    let clan = null;
+    let grade = null;
+    let power = null;
+    let shield = null;
+    let skillTextEn = null;
 
     const official = findOfficialName(c.setCode, c.nameJp);
     if (official) {
       nameEn = official.nameEn;
       translationSource = 'official';
+      kind = official.kind;
+      clan = official.clan;
+      grade = official.grade;
+      power = official.power;
+      shield = official.shield;
+      skillTextEn = official.skillText;
     } else {
       const local = translateCardName(c.nameJp);
       nameEn = local.nameEn;
@@ -48,6 +77,10 @@ function main() {
     }
 
     sourceCounts[translationSource] = (sourceCounts[translationSource] || 0) + 1;
+    if (skillTextEn) skillTextEnCount++;
+
+    const skillTextJp = skillsIndex[`${c.setSlug}/${c.id}`] || null;
+    if (skillTextJp) skillTextJpCount++;
 
     const imageUrl = sanitizeUrl(c.imageUrl);
     const detailUrl = sanitizeUrl(c.detailUrl);
@@ -65,6 +98,18 @@ function main() {
       nameJp: c.nameJp,
       nameEn,
       translationSource,
+      // Only ever populated from a verified official-name match (see
+      // match-official.js) -- null for every card without one.
+      kind,
+      clan,
+      grade,
+      power,
+      shield,
+      skillTextEn,
+      // Best-effort JP ability text scraped per-card (scrape-card-detail.js);
+      // null until that script has been run, or if it found nothing for
+      // this card.
+      skillTextJp,
       price: c.price,
       priceDisplay: c.priceDisplay,
       stock: c.stock,
@@ -84,6 +129,7 @@ function main() {
 
   console.log(`Wrote ${cards.length} cards to ${OUT_PATH}`);
   console.log('translationSource breakdown:', sourceCounts);
+  console.log(`Skill text: ${skillTextEnCount} official (EN), ${skillTextJpCount} scraped (JP).`);
   if (droppedUrls > 0) {
     console.warn(`${droppedUrls} card(s) had an imageUrl/detailUrl outside the yuyu-tei.jp allowlist (set to null).`);
   }
