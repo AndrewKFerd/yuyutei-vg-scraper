@@ -1,49 +1,44 @@
 'use strict';
 
 /**
- * Fetches every card's own yuyu-tei detail page (the `detailUrl` already
- * collected by scrape-catalog.js) to pull its Japanese skill/ability text --
- * something the global search-results listing does not include at all, only
- * a card's name/price/stock.
+ * Fetches every card's own yuyu-tei detail page (the `detailUrl` collected by
+ * scrape-catalog.js) for its Japanese rules text and stat line -- none of
+ * which appear in the global search listing.
  *
- * ## Unverified selectors -- read before running
+ * ## Markup (verified against live pages, 2026-09)
  *
- * This is a best-effort scraper. The CSS selectors and heading-text heuristic
- * below were written from the class-naming conventions yuyu-tei uses
- * elsewhere (scrape-catalog.js, and the older backend/scraper.js in git
- * history) since the detail-page markup itself could not be inspected: this
- * machine's network policy (a FortiGuard web filter, category "Games")
- * blocks yuyu-tei.jp outright. Separately, yuyu-tei's own bot defenses have
- * also been observed hard-blocking (HTTP 403) requests from GitHub Actions'
- * runner IPs after the first couple of requests -- see http-client.js for
- * the browser-header/cookie-jar mitigation shared with the other scrapers.
- * That mitigation is unverified for this specific script too, for the same
- * reason: no request to yuyu-tei.jp has ever succeeded from a machine this
- * was written on.
+ * The detail page has an attribute <table>. Stat rows pair <th> labels with
+ * <td> values, up to two pairs per row:
  *
- * Before a full run, smoke-test on a handful of cards from a network that
- * can actually reach yuyu-tei.jp:
+ *   <tr><th>カード種別</th><td>ノーマルユニット</td><th>グレード</th><td>3</td></tr>
+ *   <tr><th>パワー</th><td>13000</td><th>シールド</th><td>...</td></tr>
  *
- *   node scrape-card-detail.js --limit 20
+ * Long-text fields use TWO rows -- a lone <th colspan=4> label row, then a
+ * <td colspan=4 class="text-item-detail"> value row:
  *
- * and check the printed hit rate. A rate near 0% means the selectors need to
- * be corrected against the real markup (open one `detailUrl` in a browser
- * and see what wraps the ability text) before trusting a full run.
+ *   <tr><th colspan="4">効果</th></tr>
+ *   <tr><td colspan="4" class="text-item-detail">【自】：このユニットが...</td></tr>
  *
- * ## Scope and runtime
+ * (A mobile copy of the same table with one pair per row also exists on the
+ * page; parsing every row and keeping the first non-empty value per label
+ * handles both without caring which is which.)
  *
- * One HTTP request per card (~28k), vs. ~47 for the whole catalog listing --
- * at the same 400ms politeness delay used elsewhere in this pipeline, a full
- * run takes multiple hours. Progress is checkpointed to disk every
- * CHECKPOINT_EVERY cards, and already-fetched cards (hit, or a confirmed
- * miss) are skipped on a re-run, so an interrupted run resumes instead of
- * starting over. Pass --force to ignore the checkpoint and refetch
- * everything.
+ * Empty values are "" or "-". yuyu-tei populates these for established sets
+ * but NOT yet for a just-released set (e.g. DZ-BT16 at time of writing had
+ * "-" for every card's 効果 and blank stats), so a miss on a new set is
+ * expected and gets retried on a later run rather than cached as final.
+ *
+ * ## Runtime
+ *
+ * One request per card (~28k). Runs WORKERS concurrent fetchers, each
+ * pacing itself by DELAY_MS, and checkpoints to disk every CHECKPOINT_EVERY
+ * cards. A re-run skips cards already fetched (hit or confirmed-empty), so
+ * an interrupted run resumes. --force refetches everything.
  *
  * Usage:
  *   node scrape-card-detail.js             # full run (resumable)
- *   node scrape-card-detail.js --limit 20  # smoke test a handful of cards
- *   node scrape-card-detail.js --force     # ignore checkpoint, refetch all
+ *   node scrape-card-detail.js --limit 20  # smoke test
+ *   node scrape-card-detail.js --force     # ignore checkpoint
  */
 
 const fs = require('fs');
@@ -53,32 +48,39 @@ const { createCookieJar, browserGet } = require('./http-client');
 
 const SITE_ROOT = 'https://yuyu-tei.jp/';
 
-const DELAY_MS = 400;
-const MAX_RETRIES = 2;
-const RETRY_BACKOFF_MS = 1000;
-const PROGRESS_EVERY = 25;
-const CHECKPOINT_EVERY = 200;
+// yuyu-tei starts answering HTTP 429 somewhere above ~5 req/s sustained
+// (measured: 3 workers @ 350ms tripped it within a minute). Two workers at
+// 650ms is ~3 req/s. On any 429 every worker also backs off for COOLDOWN_MS
+// before continuing, so a burst self-corrects instead of burning retries.
+const WORKERS = 2;
+const DELAY_MS = 650;
+const COOLDOWN_MS = 20000;
+const MAX_RETRIES = 3;
+const RETRY_BACKOFF_MS = 3000;
+const PROGRESS_EVERY = 100;
+const CHECKPOINT_EVERY = 300;
 
 const CATALOG_PATH = path.join(__dirname, 'data', 'catalog-raw.json');
 const OUTPUT_PATH = path.join(__dirname, 'data', 'card-skills-raw.json');
 
-// Ordered best-guess selectors for a detail page's ability-text block,
-// tried most-specific-first. UNVERIFIED -- see file header.
-const SKILL_SELECTOR_CANDIDATES = [
-  '.card-skill-text',
-  '.skill-text',
-  '.card-effect',
-  '.effect-text',
-  '.card-detail-text',
-  '.card-text',
-  'div.text-skill',
-];
-
-// Fallback for a label/value layout ("テキスト" or "効果" as its own
-// heading element, with the actual ability text in the very next element) --
-// a common pattern on Japanese TCG/e-commerce sites when no dedicated class
-// exists for the value itself.
-const HEADING_LABELS = new Set(['テキスト', '効果', 'スキル']);
+// Japanese <th> label -> output field. Anything not listed is ignored.
+const STAT_LABELS = {
+  'カード種別': 'kind',
+  'グレード': 'grade',
+  '国家': 'nation',
+  'クラン': 'clan',
+  '種族': 'race',
+  'スキル': 'skill',
+  'パワー': 'power',
+  'シールド': 'shield',
+  'クリティカル': 'critical',
+  'トリガー': 'trigger',
+};
+const TEXT_LABELS = {
+  '効果': 'effect',
+  'フレーバー': 'flavor',
+};
+const NUMERIC_FIELDS = new Set(['grade', 'power', 'shield', 'critical']);
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -88,71 +90,124 @@ function parseArgs() {
   const args = process.argv.slice(2);
   const limitIdx = args.indexOf('--limit');
   const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
-  const force = args.includes('--force');
-  return { limit, force };
+  return { limit, force: args.includes('--force') };
 }
 
+function clean(s) {
+  const t = (s || '').replace(/ /g, ' ').trim();
+  return t === '' || t === '-' ? null : t;
+}
+
+/** Cell text with <br> preserved as newlines, so multi-ability text keeps its line breaks. */
+function cellText($, td) {
+  const html = $(td).html() || '';
+  const withBreaks = html.replace(/<br\s*\/?>/gi, '\n');
+  return clean(cheerio.load(`<div>${withBreaks}</div>`)('div').text().replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n'));
+}
+
+/**
+ * @returns {{effect: ?string, flavor: ?string, kind: ?string, grade: ?number, ...} | null}
+ *   null only if the page had no attribute table at all (i.e. not a card page).
+ */
+function extractDetail($) {
+  const out = {};
+  let sawTable = false;
+
+  const rows = $('table tr').toArray();
+  for (let i = 0; i < rows.length; i++) {
+    const $tr = $(rows[i]);
+    const ths = $tr.find('th').toArray();
+    const tds = $tr.find('td').toArray();
+    if (ths.length === 0 && tds.length === 0) continue;
+    sawTable = true;
+
+    // Lone label row for a long-text field: value is the next row's first <td>.
+    if (ths.length === 1 && tds.length === 0) {
+      const label = clean($(ths[0]).text());
+      const field = label && TEXT_LABELS[label];
+      if (field && out[field] == null) {
+        const nextTd = $(rows[i + 1]).find('td').first();
+        if (nextTd.length) out[field] = cellText($, nextTd);
+      }
+      continue;
+    }
+
+    // Paired stat cells: th[k] labels td[k].
+    for (let k = 0; k < ths.length && k < tds.length; k++) {
+      const label = clean($(ths[k]).text());
+      const field = label && STAT_LABELS[label];
+      if (!field || out[field] != null) continue;
+      let value = clean($(tds[k]).text().replace(/\s+/g, ' '));
+      if (value != null && NUMERIC_FIELDS.has(field)) {
+        const n = parseInt(value.replace(/[^\d-]/g, ''), 10);
+        value = Number.isFinite(n) ? n : null;
+      }
+      if (value != null) out[field] = value;
+    }
+  }
+
+  return sawTable ? out : null;
+}
+
+// Shared across workers: when set, everyone waits until this timestamp
+// before their next request.
+let cooldownUntil = 0;
+let cooldowns = 0;
+
+const MAX_RATE_LIMIT_PAUSES = 6; // 20s,40s,80s,160s,300s,300s ≈ 15 min max per card
+
 async function fetchWithRetry(url, jar) {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  let attempt = 0; // network/5xx failures
+  let limited = 0; // 429/403 responses (don't burn the retry budget)
+  for (;;) {
     try {
-      const res = await browserGet(url, jar, SITE_ROOT);
+      const wait = cooldownUntil - Date.now();
+      if (wait > 0) await sleep(wait);
+      const res = await browserGet(url, jar, SITE_ROOT); // throws "HTTP <status>" on non-2xx
       return await res.text();
     } catch (err) {
-      const isLastAttempt = attempt === MAX_RETRIES;
-      if (isLastAttempt) {
+      if (/HTTP (429|403)/.test(err.message)) {
+        // Global pause shared by every worker. Doubles on each consecutive
+        // limited attempt (capped at 5 min) so a sustained block -- yuyu-tei
+        // bans for minutes after a burst -- backs off instead of hammering.
+        if (++limited > MAX_RATE_LIMIT_PAUSES) {
+          console.warn(`[warn] ${url}: still rate-limited after ${MAX_RATE_LIMIT_PAUSES} pauses. Skipping for this run.`);
+          return null;
+        }
+        const pause = Math.min(COOLDOWN_MS * Math.pow(2, limited - 1), 5 * 60 * 1000);
+        if (Date.now() >= cooldownUntil) {
+          cooldowns++;
+          console.warn(`[rate-limit] ${err.message} -- pausing all workers ${Math.round(pause / 1000)}s (cooldown #${cooldowns})`);
+        }
+        cooldownUntil = Math.max(cooldownUntil, Date.now() + pause);
+        continue;
+      }
+      if (attempt++ >= MAX_RETRIES) {
         console.warn(`[warn] ${url}: failed after ${MAX_RETRIES + 1} attempts (${err.message}). Skipping.`);
         return null;
       }
-      await sleep(RETRY_BACKOFF_MS * (attempt + 1));
+      await sleep(RETRY_BACKOFF_MS * attempt);
     }
   }
-  return null;
-}
-
-/** @returns {{ text: string, matchedSelector: string } | null} */
-function extractSkillTextJp($) {
-  for (const selector of SKILL_SELECTOR_CANDIDATES) {
-    const text = $(selector).first().text().trim();
-    if (text) return { text, matchedSelector: selector };
-  }
-
-  let found = null;
-  $('h1, h2, h3, h4, h5, dt, th, span, div').each((_, el) => {
-    if (found) return false;
-    const $el = $(el);
-    // Own text only (excluding nested children) so a wrapping container
-    // whose full text happens to contain "テキスト" doesn't false-match.
-    const label = $el.clone().children().remove().end().text().trim();
-    if (!HEADING_LABELS.has(label)) return;
-    const next = $el.next();
-    const text = next.text().trim();
-    if (text) {
-      found = { text, matchedSelector: `heuristic:${label}` };
-      return false;
-    }
-  });
-  return found;
 }
 
 function loadCheckpoint(force) {
   if (force || !fs.existsSync(OUTPUT_PATH)) return {};
   try {
-    const raw = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf8'));
-    return raw.skills || {};
+    return JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf8')).skills || {};
   } catch (err) {
-    console.warn(`[warn] Could not read existing ${OUTPUT_PATH} (${err.message}). Starting fresh.`);
+    console.warn(`[warn] Could not read ${OUTPUT_PATH} (${err.message}). Starting fresh.`);
     return {};
   }
 }
 
 function writeOutput(skills) {
-  const payload = {
-    scrapedAt: new Date().toISOString(),
-    count: Object.keys(skills).length,
-    skills,
-  };
   fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
-  fs.writeFileSync(OUTPUT_PATH, JSON.stringify(payload), 'utf8');
+  fs.writeFileSync(
+    OUTPUT_PATH,
+    JSON.stringify({ scrapedAt: new Date().toISOString(), count: Object.keys(skills).length, skills }),
+    'utf8'
+  );
 }
 
 async function main() {
@@ -166,76 +221,71 @@ async function main() {
     process.exit(1);
   }
 
-  let cardsToProcess = catalog.cards;
-  if (limit) cardsToProcess = cardsToProcess.slice(0, limit);
-
   const skills = loadCheckpoint(force);
   const startedWith = Object.keys(skills).length;
+
+  // A card is "done" once it has an effect text. Cards with an attribute
+  // table but no effect (typically a set yuyu-tei hasn't filled in yet) are
+  // stored so their stats are usable, but are retried on the next run in
+  // case the text has since appeared.
+  let queue = (limit ? catalog.cards.slice(0, limit) : catalog.cards).filter((c) => {
+    const prev = skills[`${c.setSlug}/${c.id}`];
+    return !(prev && prev.effect);
+  });
+
+  console.log(`${queue.length} cards to fetch (${startedWith} already in checkpoint).`);
 
   const jar = createCookieJar();
   try {
     await browserGet(SITE_ROOT, jar);
   } catch (err) {
-    console.warn(`[warn] Warm-up request to ${SITE_ROOT} failed (${err.message}). Continuing anyway.`);
+    console.warn(`[warn] Warm-up request failed (${err.message}). Continuing anyway.`);
   }
-  await sleep(DELAY_MS);
 
-  let fetched = 0;
-  let hits = 0;
-  let misses = 0;
-  let failures = 0;
-  const selectorTally = {};
+  let fetched = 0, hits = 0, statsOnly = 0, empty = 0, failures = 0;
+  let cursor = 0;
 
-  for (const card of cardsToProcess) {
-    const key = `${card.setSlug}/${card.id}`;
-    if (Object.prototype.hasOwnProperty.call(skills, key)) continue; // resumed from checkpoint
-    if (!card.detailUrl) {
-      skills[key] = null;
-      continue;
-    }
+  async function worker() {
+    while (cursor < queue.length) {
+      const card = queue[cursor++];
+      const key = `${card.setSlug}/${card.id}`;
+      if (!card.detailUrl) continue;
 
-    await sleep(DELAY_MS);
-    const html = await fetchWithRetry(card.detailUrl, jar);
-    fetched++;
+      await sleep(DELAY_MS);
+      const html = await fetchWithRetry(card.detailUrl, jar);
+      fetched++;
 
-    if (html === null) {
-      failures++;
-      continue; // leave unset so a future run retries this one
-    }
+      if (html === null) {
+        failures++; // left unset so a future run retries it
+      } else {
+        const detail = extractDetail(cheerio.load(html));
+        if (!detail) {
+          empty++;
+          skills[key] = { effect: null };
+        } else {
+          skills[key] = detail;
+          if (detail.effect) hits++;
+          else if (Object.keys(detail).length) statsOnly++;
+          else empty++;
+        }
+      }
 
-    const $ = cheerio.load(html);
-    const result = extractSkillTextJp($);
-    if (result) {
-      skills[key] = result.text;
-      hits++;
-      selectorTally[result.matchedSelector] = (selectorTally[result.matchedSelector] || 0) + 1;
-    } else {
-      skills[key] = null;
-      misses++;
-    }
-
-    if (fetched % PROGRESS_EVERY === 0) {
-      console.log(`... ${fetched}/${cardsToProcess.length - startedWith} fetched this run (${hits} hit, ${misses} miss, ${failures} failed)`);
-    }
-    if (fetched % CHECKPOINT_EVERY === 0) {
-      writeOutput(skills);
+      if (fetched % PROGRESS_EVERY === 0) {
+        console.log(`... ${fetched}/${queue.length} (${hits} with effect, ${statsOnly} stats-only, ${empty} empty, ${failures} failed)`);
+      }
+      if (fetched % CHECKPOINT_EVERY === 0) writeOutput(skills);
     }
   }
 
+  await Promise.all(Array.from({ length: WORKERS }, worker));
   writeOutput(skills);
 
-  console.log(`\nDone. ${fetched} fetched this run, ${hits} hit, ${misses} miss, ${failures} failed.`);
-  console.log(`Total in checkpoint: ${Object.keys(skills).length} cards.`);
-  console.log('Selector hit tally:', selectorTally);
+  console.log(`\nDone (${cooldowns} rate-limit cooldowns). ${fetched} fetched: ${hits} with effect text, ${statsOnly} stats-only (no text yet), ${empty} empty, ${failures} failed.`);
+  console.log(`Checkpoint now holds ${Object.keys(skills).length} cards.`);
 
-  const attempted = hits + misses;
-  const hitRate = attempted > 0 ? hits / attempted : 0;
-  if (attempted >= 20 && hitRate < 0.05) {
-    console.warn(
-      '\n[warn] Hit rate is under 5% -- the selectors in SKILL_SELECTOR_CANDIDATES / ' +
-      'HEADING_LABELS almost certainly do not match this site\'s real detail-page markup. ' +
-      'Inspect a detailUrl in a browser and update scrape-card-detail.js before trusting this data.'
-    );
+  const attempted = hits + statsOnly + empty;
+  if (attempted >= 20 && hits / attempted < 0.05) {
+    console.warn('\n[warn] Under 5% of pages yielded effect text -- yuyu-tei may have changed its detail-page markup. Inspect a detailUrl and update extractDetail().');
   }
 }
 

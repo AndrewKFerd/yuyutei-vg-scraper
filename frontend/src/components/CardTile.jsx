@@ -1,9 +1,11 @@
 import { memo } from 'react'
 import RarityBadge from './RarityBadge'
 import { formatPrice } from '../currency'
+import { imageUrl2x } from '../images'
 
 function CardTile({ card, currency, rates, onSelect }) {
   const inStock = card.stock > 0
+  const url2x = imageUrl2x(card.imageUrl)
   const displayPrice =
     currency && currency !== 'JPY' ? formatPrice(card.price, currency, rates) : card.priceDisplay
 
@@ -19,6 +21,10 @@ function CardTile({ card, currency, rates, onSelect }) {
       <div className="relative aspect-[100/140] w-full overflow-hidden bg-slate-100 dark:bg-night-700">
         <img
           src={card.imageUrl}
+          // Phones are 2-3x DPR, so the 100px thumbnail alone renders soft;
+          // let the browser pick the 200px scan there and keep the small one
+          // for 1x screens.
+          srcSet={url2x ? `${card.imageUrl} 1x, ${url2x} 2x` : undefined}
           alt={card.nameEn || card.nameJp}
           loading="lazy"
           decoding="async"

@@ -79,8 +79,22 @@ function main() {
     sourceCounts[translationSource] = (sourceCounts[translationSource] || 0) + 1;
     if (skillTextEn) skillTextEnCount++;
 
-    const skillTextJp = skillsIndex[`${c.setSlug}/${c.id}`] || null;
+    // Per-card detail scraped from yuyu-tei (scrape-card-detail.js). The
+    // stat line fills in whatever the official match didn't provide -- for
+    // the ~78% of cards with no English release this is the only source.
+    // Japanese labels are kept as-is for text fields (kind/clan) so the UI
+    // isn't showing a machine-mangled "translation" of a proper noun.
+    const detail = skillsIndex[`${c.setSlug}/${c.id}`] || null;
+    const skillTextJp = detail?.effect || null;
+    const flavorJp = detail?.flavor || null;
     if (skillTextJp) skillTextJpCount++;
+    if (detail) {
+      kind ??= detail.kind ?? null;
+      clan ??= detail.clan ?? detail.nation ?? null;
+      grade ??= detail.grade ?? null;
+      power ??= detail.power ?? null;
+      shield ??= detail.shield ?? null;
+    }
 
     const imageUrl = sanitizeUrl(c.imageUrl);
     const detailUrl = sanitizeUrl(c.detailUrl);
@@ -98,18 +112,20 @@ function main() {
       nameJp: c.nameJp,
       nameEn,
       translationSource,
-      // Only ever populated from a verified official-name match (see
-      // match-official.js) -- null for every card without one.
+      // From the official English match when there is one, else from the
+      // yuyu-tei detail scrape (Japanese labels) -- null if neither had it.
       kind,
       clan,
       grade,
       power,
       shield,
+      // Official English rules text (only for cards with an EN release).
       skillTextEn,
-      // Best-effort JP ability text scraped per-card (scrape-card-detail.js);
-      // null until that script has been run, or if it found nothing for
-      // this card.
+      // Japanese rules/flavor text from scrape-card-detail.js; null until
+      // that's been run, or for cards yuyu-tei hasn't filled in (brand-new
+      // sets) or that have no text (tokens/markers).
       skillTextJp,
+      flavorJp,
       price: c.price,
       priceDisplay: c.priceDisplay,
       stock: c.stock,

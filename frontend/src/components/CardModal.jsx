@@ -1,6 +1,46 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import RarityBadge from './RarityBadge'
 import { formatPrice } from '../currency'
+import { imageUrl2x, imageUrlHd } from '../images'
+
+// Full-screen view of the 500x700 scan. Tap/click anywhere or press Escape
+// to dismiss. Sits above the card modal (z-60 vs 50) and stops propagation
+// so closing it doesn't also close the modal beneath.
+function Lightbox({ src, alt, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+      }
+    }
+    // Capture phase so this runs before the modal's own Escape handler.
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [onClose])
+
+  return (
+    <div
+      role="presentation"
+      onMouseDown={(e) => {
+        e.stopPropagation()
+        onClose()
+      }}
+      className="fixed inset-0 z-[60] flex cursor-zoom-out items-center justify-center bg-night-950/90 p-3"
+    >
+      <img src={src} alt={alt} className="max-h-full max-w-full rounded-md object-contain shadow-2xl" />
+      <button
+        type="button"
+        aria-label="Close full-size image"
+        className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full bg-night-800/80 text-gold-500 hover:bg-night-700"
+      >
+        <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+          <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" />
+        </svg>
+      </button>
+    </div>
+  )
+}
 
 // Small "Grade 3" / "Power 13000" style pills next to the rarity badge.
 // Only ever populated for cards with a verified official English match
@@ -48,6 +88,18 @@ function SkillText({ card }) {
 }
 
 function CardModal({ card, currency, rates, onClose }) {
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+  // Which scan the modal thumbnail is showing: start with the 500x700
+  // "front" scan; if the CDN doesn't have one for this card, fall back to
+  // the 2x thumbnail rather than a broken image.
+  const [hdFailed, setHdFailed] = useState(false)
+
+  // Reset per card so a previous card's fallback/lightbox state doesn't leak.
+  useEffect(() => {
+    setLightboxOpen(false)
+    setHdFailed(false)
+  }, [card])
+
   // Escape-to-close, and lock page scroll while the modal is open -- both
   // only need to be active while a card is actually selected.
   useEffect(() => {
@@ -72,6 +124,9 @@ function CardModal({ card, currency, rates, onClose }) {
   const inStock = card.stock > 0
   const displayPrice =
     currency && currency !== 'JPY' ? formatPrice(card.price, currency, rates) : card.priceDisplay
+  const hdSrc = imageUrlHd(card.imageUrl)
+  const bigSrc = (!hdFailed && hdSrc) || imageUrl2x(card.imageUrl) || card.imageUrl
+  const altText = card.nameEn || card.nameJp
 
   return (
     <div
@@ -99,16 +154,28 @@ function CardModal({ card, currency, rates, onClose }) {
             footer outside the scroll container means the link is always
             reachable regardless of how tall the content above it gets. */}
         <div className="flex min-h-0 flex-col gap-5 overflow-y-auto p-5 sm:grid sm:grid-cols-[200px_1fr] sm:p-6">
-          <div className="relative aspect-[100/140] w-36 max-h-[38vh] self-center overflow-hidden rounded-md bg-slate-100 sm:w-full dark:bg-night-700 sm:max-h-none sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(true)}
+            aria-label="View full-size card image"
+            title="View full size"
+            className="group relative aspect-[100/140] w-36 max-h-[38vh] cursor-zoom-in self-center overflow-hidden rounded-md bg-slate-100 sm:w-full dark:bg-night-700 sm:max-h-none sm:self-auto"
+          >
             <img
-              src={card.imageUrl}
-              alt={card.nameEn || card.nameJp}
-              className="h-full w-full object-cover"
+              src={bigSrc}
+              onError={() => {
+                if (!hdFailed) setHdFailed(true)
+              }}
+              alt={altText}
+              className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
             />
             <div className="absolute left-1.5 top-1.5">
               <RarityBadge rarity={card.rarity} />
             </div>
-          </div>
+            <span className="absolute bottom-1.5 right-1.5 rounded bg-night-950/70 px-1.5 py-0.5 text-[10px] font-medium text-gold-500 opacity-80 group-hover:opacity-100">
+              Tap to enlarge
+            </span>
+          </button>
 
           <div className="flex flex-col gap-3">
             <div className="flex items-start justify-between gap-2">
@@ -149,6 +216,12 @@ function CardModal({ card, currency, rates, onClose }) {
               </h3>
               <SkillText card={card} />
             </div>
+
+            {card.flavorJp && (
+              <p lang="ja" className="text-xs italic leading-relaxed text-slate-500 dark:text-gold-500/60">
+                {card.flavorJp}
+              </p>
+            )}
           </div>
         </div>
 
@@ -174,6 +247,8 @@ function CardModal({ card, currency, rates, onClose }) {
           )}
         </div>
       </div>
+
+      {lightboxOpen && <Lightbox src={bigSrc} alt={altText} onClose={() => setLightboxOpen(false)} />}
     </div>
   )
 }
