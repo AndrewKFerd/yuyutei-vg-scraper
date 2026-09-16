@@ -21,7 +21,9 @@ frontend/  -> Vite + React + Tailwind static site that reads that JSON file
 4. `translate-engine.js` + `data/glossary.json` — a zero-network, deterministic JA→EN engine (hand-authored glossary + Hepburn romanization) used as the name fallback whenever there's no official English release yet.
 5. `build-data.js` — combines the above (official name/skill text first, local engine + scraped JP skill text as fallback) into `frontend/public/data/cards.json`.
 
-Re-run the whole pipeline:
+**This runs on its own.** `.github/workflows/update-catalog.yml` re-scrapes yuyu-tei + cf-vanguard and commits a fresh `frontend/public/data/cards.json` to `main` daily (and on demand from the Actions tab) — that push is what triggers Vercel to redeploy. Nobody needs to run the pipeline locally or hand-commit its output for the site to stay up to date. The one piece the workflow deliberately skips is `scrape-card-detail.js` (see below) — its selectors are unverified and a full run takes hours, so it's a manual, occasional step.
+
+To run any of it by hand (e.g. to test a pipeline change, or to run `scrape-card-detail.js`):
 ```
 cd pipeline
 npm install
