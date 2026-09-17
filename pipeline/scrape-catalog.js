@@ -44,11 +44,18 @@ function parsePrice(text) {
   return parseInt(match[0].replace(/,/g, ''), 10);
 }
 
+// Three distinct stock states appear here, not two: a specific count ("5
+// 点"), explicitly out of stock ("×" / "品切れ" / "売り切れ"), and a plain
+// "◯" -- yuyu-tei's marker for bulk/always-available items (commons,
+// trial-deck fillers) that never runs out. Collapsing "◯" into 0 would be
+// actively wrong (shows an available card as out of stock), so it gets its
+// own sentinel: null means "in stock, no specific count given."
 function parseStock(text) {
   if (!text) return 0;
   if (/×|品切れ|売り切れ/.test(text)) return 0;
   const match = text.match(/(\d+)/);
-  return match ? parseInt(match[1], 10) : 0;
+  if (match) return parseInt(match[1], 10);
+  return /[◯○]/.test(text) ? null : 0;
 }
 
 function extractIdFromUrl(url) {

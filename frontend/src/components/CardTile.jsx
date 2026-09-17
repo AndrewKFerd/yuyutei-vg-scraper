@@ -2,9 +2,10 @@ import { memo } from 'react'
 import RarityBadge from './RarityBadge'
 import { formatPrice } from '../currency'
 import { imageUrl2x } from '../images'
+import { stockInfo } from '../stock'
 
 function CardTile({ card, currency, rates, onSelect }) {
-  const inStock = card.stock > 0
+  const { inStock, label: stockLabel } = stockInfo(card.stock)
   const url2x = imageUrl2x(card.imageUrl)
   const displayPrice =
     currency && currency !== 'JPY' ? formatPrice(card.price, currency, rates) : card.priceDisplay
@@ -54,7 +55,7 @@ function CardTile({ card, currency, rates, onSelect }) {
               inStock ? 'text-green-600' : 'text-red-500'
             }`}
           >
-            {inStock ? `Stock: ${card.stock}` : 'Out of stock'}
+            {stockLabel}
           </span>
         </div>
       </div>
