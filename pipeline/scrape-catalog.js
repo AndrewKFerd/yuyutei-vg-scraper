@@ -250,7 +250,13 @@ async function main() {
   );
 }
 
-main().catch((err) => {
-  console.error('Fatal error during catalog scrape:', err);
-  process.exit(1);
-});
+// Only auto-run the full crawl when executed directly (`node scrape-catalog.js`);
+// scrape-set.js requires this module purely for parseCardsFromHtml.
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Fatal error during catalog scrape:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { parseCardsFromHtml, parsePrice, parseStock, extractIdFromUrl, extractSetSlugFromUrl };
