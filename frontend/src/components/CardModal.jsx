@@ -94,11 +94,16 @@ function CardModal({ card, currency, rates, onClose }) {
   // "front" scan; if the CDN doesn't have one for this card, fall back to
   // the 2x thumbnail rather than a broken image.
   const [hdFailed, setHdFailed] = useState(false)
+  // Collapsed by default -- a full ability text can run to a dozen lines,
+  // which used to push the sticky footer (price/stock/outbound link) far
+  // enough down that reaching it meant scrolling past a wall of text first.
+  const [skillOpen, setSkillOpen] = useState(false)
 
-  // Reset per card so a previous card's fallback/lightbox state doesn't leak.
+  // Reset per card so a previous card's fallback/lightbox/skill state doesn't leak.
   useEffect(() => {
     setLightboxOpen(false)
     setHdFailed(false)
+    setSkillOpen(false)
   }, [card])
 
   // Escape-to-close, and lock page scroll while the modal is open -- both
@@ -212,10 +217,22 @@ function CardModal({ card, currency, rates, onClose }) {
             </div>
 
             <div>
-              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-gold-500/60">
-                Skill
-              </h3>
-              <SkillText card={card} />
+              <button
+                type="button"
+                onClick={() => setSkillOpen((open) => !open)}
+                aria-expanded={skillOpen}
+                className="flex w-full items-center gap-1 py-1 text-xs font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600 dark:text-gold-500/60 dark:hover:text-gold-500"
+              >
+                <svg
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className={`h-3.5 w-3.5 shrink-0 transition-transform ${skillOpen ? 'rotate-90' : ''}`}
+                >
+                  <path d="M7.05 4.05a1 1 0 011.414 0l4.243 4.243a1 1 0 010 1.414L8.464 13.95a1 1 0 11-1.414-1.414L10.586 9 7.05 5.464a1 1 0 010-1.414z" />
+                </svg>
+                Skill {skillOpen ? '' : '(tap to show)'}
+              </button>
+              {skillOpen && <SkillText card={card} />}
             </div>
 
             {card.flavorJp && (
