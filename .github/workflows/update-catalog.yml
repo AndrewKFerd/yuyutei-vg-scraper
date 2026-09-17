@@ -17,11 +17,17 @@ name: Update card catalog
 
 on:
   schedule:
-    - cron: '0 18 * * *' # once a day; adjust as you like
+    - cron: '*/30 * * * *' # every 30 minutes, for near-live prices/stock
   workflow_dispatch: {} # lets you trigger a run on demand from the Actions tab
 
 permissions:
   contents: write
+
+# A run currently takes a few minutes; this just guards against one ever
+# running long enough to overlap the next scheduled trigger.
+concurrency:
+  group: update-catalog
+  cancel-in-progress: false
 
 jobs:
   update-catalog:
@@ -59,6 +65,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "Update card catalog ($(date -u +%Y-%m-%d))"
+            git commit -m "Update card catalog ($(date -u +%Y-%m-%dT%H:%M) UTC)"
             git push
           fi
