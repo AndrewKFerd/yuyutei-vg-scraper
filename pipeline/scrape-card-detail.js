@@ -39,9 +39,10 @@
  * an interrupted run resumes. --force refetches everything.
  *
  * Usage:
- *   node scrape-card-detail.js             # full run (resumable)
- *   node scrape-card-detail.js --limit 20  # smoke test
- *   node scrape-card-detail.js --force     # ignore checkpoint
+ *   node scrape-card-detail.js                       # full run (resumable)
+ *   node scrape-card-detail.js --limit 20             # smoke test
+ *   node scrape-card-detail.js --sets dzss19,dzbt16   # only these setSlugs
+ *   node scrape-card-detail.js --force                # ignore checkpoint
  */
 
 const fs = require('fs');
@@ -95,7 +96,9 @@ function parseArgs() {
   const args = process.argv.slice(2);
   const limitIdx = args.indexOf('--limit');
   const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
-  return { limit, force: args.includes('--force') };
+  const setsIdx = args.indexOf('--sets');
+  const sets = setsIdx !== -1 ? args[setsIdx + 1].split(',').map((s) => s.trim().toLowerCase()) : null;
+  return { limit, sets, force: args.includes('--force') };
 }
 
 function clean(s) {
@@ -216,13 +219,23 @@ function writeOutput(skills) {
 }
 
 async function main() {
-  const { limit, force } = parseArgs();
+  const { limit, sets, force } = parseArgs();
 
   let catalog;
   try {
     catalog = JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf8'));
   } catch (err) {
     console.error(`Could not read ${CATALOG_PATH} (${err.message}). Run scrape-catalog.js first.`);
+    process.exit(1);
+  }
+
+  // --sets scopes the whole run to listings from those setSlugs only --
+  // e.g. to backfill just-added sets without touching the full queue.
+  const scopedListings = sets
+    ? catalog.cards.filter((c) => sets.includes((c.setSlug || '').toLowerCase()))
+    : catalog.cards;
+  if (sets && scopedListings.length === 0) {
+    console.error(`No listings found for --sets ${sets.join(',')} -- check the slugs are right.`);
     process.exit(1);
   }
 
@@ -237,7 +250,7 @@ async function main() {
   // (non-variant) printing. Catalog order is newest-set-first, so the
   // cards people are most likely to look at get their text earliest.
   const reps = new Map();
-  for (const c of catalog.cards) {
+  for (const c of scopedListings) {
     const k = groupKey(c);
     const cur = reps.get(k);
     if (!cur || (!isPlainPrinting(cur) && isPlainPrinting(c))) reps.set(k, c);
@@ -248,7 +261,10 @@ async function main() {
   });
   if (limit) queue = queue.slice(0, limit);
 
-  console.log(`${queue.length} cards to fetch (${reps.size} unique cards across ${catalog.cards.length} listings; ${startedWith} already in checkpoint).`);
+  console.log(
+    `${queue.length} cards to fetch (${reps.size} unique cards across ${scopedListings.length} listings` +
+    `${sets ? ` in {${sets.join(', ')}}` : ''}; ${startedWith} already in checkpoint).`
+  );
 
   const jar = createCookieJar();
   try {

@@ -8,6 +8,7 @@ import SetFilter from './components/SetFilter'
 import RarityFilter from './components/RarityFilter'
 import CurrencySelector from './components/CurrencySelector'
 import CardGrid from './components/CardGrid'
+import RaritySections from './components/RaritySections'
 import CardModal from './components/CardModal'
 import Pagination from './components/Pagination'
 import Footer from './components/Footer'
@@ -116,11 +117,20 @@ function App() {
     return Array.from(slugs).sort()
   }, [cards])
 
-  // Distinct rarities present in the loaded catalog, known ones first (in a
-  // sensible rarest-first order), anything unrecognized appended after.
+  // Cards narrowed to the selected set only (independent of the rarity
+  // filter/search), so the rarity dropdown can reflect just what's actually
+  // in that set instead of every rarity code in the whole catalog.
+  const setScopedCards = useMemo(() => {
+    if (!setSlug) return cards
+    return cards.filter((card) => card.setSlug === setSlug)
+  }, [cards, setSlug])
+
+  // Distinct rarities present in the selected set (or the whole catalog when
+  // no set is picked), known ones first (in a sensible rarest-first order),
+  // anything unrecognized appended after.
   const rarityOptions = useMemo(() => {
     const present = new Set()
-    for (const card of cards) {
+    for (const card of setScopedCards) {
       if (card.rarity) present.add(card.rarity)
     }
     const known = RARITY_ORDER.filter((r) => present.has(r))
@@ -128,7 +138,14 @@ function App() {
       .filter((r) => !RARITY_ORDER.includes(r))
       .sort()
     return [...known, ...unknown]
-  }, [cards])
+  }, [setScopedCards])
+
+  // Switching to a set that doesn't have the currently-selected rarity
+  // (or back to "All Sets", which can only narrow the list further) would
+  // otherwise silently show zero results with no clue why -- reset instead.
+  useEffect(() => {
+    if (rarity && !rarityOptions.includes(rarity)) setRarity('')
+  }, [rarityOptions, rarity])
 
   // Text search, the set dropdown, and the rarity dropdown all AND
   // together. All cheap linear scans over the in-memory array, and
@@ -155,6 +172,11 @@ function App() {
     setPage(1)
   }, [deferredQuery, setSlug, rarity])
 
+  // A single set tops out around 300-400 cards (vs. tens of thousands for
+  // the whole catalog), so once one is picked there's no need to paginate --
+  // show everything at once, grouped into per-rarity sections instead.
+  const isSetSelected = setSlug !== ''
+
   const totalPages = Math.max(1, Math.ceil(filteredCards.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
   const startIndex = (safePage - 1) * PAGE_SIZE
@@ -163,9 +185,26 @@ function App() {
     [filteredCards, startIndex]
   )
 
+  // Group filteredCards by rarity, in the same rarest-first order as the
+  // dropdown, for the sectioned single-set view. A rarity with no cards
+  // left after the search/rarity filters narrowed things down just doesn't
+  // get a section, rather than rendering an empty one.
+  const raritySections = useMemo(() => {
+    if (!isSetSelected) return []
+    const byRarity = new Map()
+    for (const card of filteredCards) {
+      const key = card.rarity || ''
+      if (!byRarity.has(key)) byRarity.set(key, [])
+      byRarity.get(key).push(card)
+    }
+    const order = rarityOptions.length > 0 ? rarityOptions : Array.from(byRarity.keys())
+    return order.filter((r) => byRarity.has(r)).map((r) => ({ rarity: r, cards: byRarity.get(r) }))
+  }, [isSetSelected, filteredCards, rarityOptions])
+
   const isFiltered = deferredQuery.trim().length > 0 || setSlug !== '' || rarity !== ''
   const rangeStart = filteredCards.length === 0 ? 0 : startIndex + 1
   const rangeEnd = Math.min(startIndex + PAGE_SIZE, filteredCards.length)
+  const countLabel = filteredCards.length.toLocaleString()
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-night-900">
@@ -187,9 +226,11 @@ function App() {
                 ? isFiltered
                   ? 'No cards match your search.'
                   : 'No cards in catalog.'
-                : `Showing ${rangeStart.toLocaleString()}-${rangeEnd.toLocaleString()} of ${filteredCards.length.toLocaleString()} ${
-                    isFiltered ? 'matching ' : ''
-                  }cards`)}
+                : isSetSelected
+                  ? `Showing all ${countLabel} ${isFiltered ? 'matching ' : ''}cards`
+                  : `Showing ${rangeStart.toLocaleString()}-${rangeEnd.toLocaleString()} of ${countLabel} ${
+                      isFiltered ? 'matching ' : ''
+                    }cards`)}
           </div>
 
           {status === 'ready' && meta && (
@@ -235,7 +276,16 @@ function App() {
           </div>
         )}
 
-        {status === 'ready' && (
+        {status === 'ready' && isSetSelected && (
+          <RaritySections
+            sections={raritySections}
+            currency={currency}
+            rates={rates}
+            onSelect={setSelectedCard}
+          />
+        )}
+
+        {status === 'ready' && !isSetSelected && (
           <>
             <CardGrid
               cards={pageCards}
