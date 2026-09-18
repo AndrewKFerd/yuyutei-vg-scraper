@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 *.log
+pipeline/refresh.lock
 pipeline/data/catalog-raw.json
 pipeline/data/cf-vanguard-raw.json
 pipeline/data/card-details-raw.json
