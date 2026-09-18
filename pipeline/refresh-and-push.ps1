@@ -1,6 +1,8 @@
 # Runs scrape-catalog.js + scrape-cf-vanguard.js, rebuilds
-# frontend/public/data/cards.json, and pushes it straight to main if it
-# changed -- Vercel's GitHub integration then deploys that push. This keeps
+# pipeline/data/cards.json, and uploads it to the private Supabase Storage
+# bucket the frontend reads from (via api/cards.js) -- no git commit/push
+# or Vercel redeploy needed for a data-only refresh; the site picks up the
+# new data the next time a visitor's daily cache expires. This keeps
 # prices/stock and official EN names/skill text current; it does NOT run
 # scrape-card-detail.js (per-card JP skill text for cards with no EN
 # release), which is a separate, much slower, manual step -- see
@@ -41,8 +43,8 @@ $lockFile = Join-Path $pipelineDir 'refresh.lock'
 # A full run takes ~11-12 min inside a 30-min schedule, so overlap should be
 # rare -- but scrape-catalog.js/scrape-cf-vanguard.js can block for extended
 # periods on rate-limit backoff, and two concurrent runs would both write
-# cards.json and both git push, so this guards against that rather than
-# relying on timing alone. A lock older than 25 min is assumed to be from a
+# and upload cards.json, so this guards against that rather than relying on
+# timing alone. A lock older than 25 min is assumed to be from a
 # crashed run (this script always removes its own lock, success or failure)
 # and is taken over rather than left to block every future run forever.
 $staleLockMinutes = 25
@@ -86,24 +88,8 @@ try {
 
     Invoke-Native 'Starting refresh: scrape-catalog.js' 'node' @('scrape-catalog.js') | Out-Null
     Invoke-Native 'Starting refresh: scrape-cf-vanguard.js' 'node' @('scrape-cf-vanguard.js') | Out-Null
-    Invoke-Native 'Building frontend/public/data/cards.json' 'node' @('build-data.js') | Out-Null
-
-    Set-Location -LiteralPath $repoRoot
-    Invoke-Native 'git add' 'git' @('add', 'frontend/public/data/cards.json') | Out-Null
-
-    $ErrorActionPreference = 'Continue'
-    git diff --cached --quiet
-    $noChanges = ($LASTEXITCODE -eq 0)
-    $ErrorActionPreference = 'Stop'
-
-    if ($noChanges) {
-        Log 'No changes to commit.'
-    } else {
-        $stamp = Get-Date -Format 'yyyy-MM-ddTHH:mm'
-        Invoke-Native 'git commit' 'git' @('commit', '-m', "Update card catalog ($stamp local)") | Out-Null
-        Invoke-Native 'git push' 'git' @('push') | Out-Null
-        Log 'Pushed.'
-    }
+    Invoke-Native 'Building pipeline/data/cards.json' 'node' @('build-data.js') | Out-Null
+    Invoke-Native 'Uploading cards.json to Supabase Storage' 'node' @('--env-file=.env', 'upload-cards.js') | Out-Null
 
     Log 'Refresh complete.'
 } catch {

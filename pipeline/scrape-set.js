@@ -88,7 +88,7 @@ async function main() {
     `"${slug}": ${before} card(s) previously in catalog-raw.json, ${scraped.length} scraped just now. ` +
     `Wrote ${CATALOG_PATH} (${catalog.count} cards total).`
   );
-  console.log('Run build-data.js next to fold this into frontend/public/data/cards.json.');
+  console.log('Run build-data.js next to fold this into data/cards.json.');
 }
 
 main().catch((err) => {

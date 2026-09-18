@@ -2,11 +2,10 @@ import { clearCatalogCache, getCachedCatalog } from './catalogCache'
 
 /**
  * Fetches the full pre-generated card catalog — every set, tens of
- * thousands of rows — as a static JSON asset served same-origin from
- * `public/data/cards.json` (Vite dev server and any static host in
- * production both serve `public/` at the site root). There's no backend
- * call here anymore: the dataset is built offline and just needs to be
- * downloaded and parsed once on load.
+ * thousands of rows — via `/api/cards`, a same-origin Vercel Function that
+ * proxies a private Supabase Storage bucket (see api/cards.js). The
+ * dataset itself is still built entirely offline (pipeline/build-data.js);
+ * this just downloads and parses it once on load.
  *
  * The first visit in a day downloads it fresh; any repeat visit within the
  * same day reuses a local cached copy instead of re-downloading a ~10MB

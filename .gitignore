@@ -6,5 +6,7 @@ pipeline/refresh.lock
 pipeline/data/catalog-raw.json
 pipeline/data/cf-vanguard-raw.json
 pipeline/data/card-details-raw.json
+pipeline/data/cards.json
 .vercel
 .env*
+!.env.example

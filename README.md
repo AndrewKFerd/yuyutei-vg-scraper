@@ -4,13 +4,19 @@ An English-language, Gelbooru-style search UI over yuyu-tei.jp's entire Cardfigh
 
 ## Architecture
 
-Data is generated **offline**, ahead of time, not fetched live at request time. There is no backend server in production.
+Data is generated **offline**, ahead of time, not fetched live at request time.
+The built dataset lives in a **private** Supabase Storage bucket; the only
+server-side piece in production is a single Vercel Function that proxies it.
 
 ```
-pipeline/  -> scrapes yuyu-tei + cf-vanguard.com, translates card names, writes
-              frontend/public/data/cards.json
-frontend/  -> Vite + React + Tailwind static site that reads that JSON file
-              and renders/searches it entirely client-side
+pipeline/     -> scrapes yuyu-tei + cf-vanguard.com, translates card names,
+                 writes pipeline/data/cards.json, uploads it to Supabase
+                 Storage (private bucket -- see pipeline/upload-cards.js)
+frontend/     -> Vite + React + Tailwind static site
+frontend/api/ -> cards.js, a Vercel Function that proxies the private bucket
+                 (holds the Supabase S3 credentials server-side; the browser
+                 never sees them) -- the frontend fetches /api/cards and
+                 renders/searches the result entirely client-side
 ```
 
 ### `pipeline/`
@@ -19,23 +25,25 @@ frontend/  -> Vite + React + Tailwind static site that reads that JSON file
 2. `scrape-cf-vanguard.js` + `match-official.js` — scrapes the official English Cardfight!! Vanguard database and, where a card's JP set code has a verified English release, supplies its real official name plus its kind/clan/grade/power/shield and English skill text.
 3. `scrape-card-detail.js` — fetches each card's own yuyu-tei detail page for its Japanese skill text, as a fallback for cards with no official English release yet. This is a per-card scrape (~28k requests) so it's slow (multiple hours) and resumable/checkpointed; run it as a separate, optional step. **Its selectors are unverified — see the file header before trusting a full run.**
 4. `translate-engine.js` + `data/glossary.json` — a zero-network, deterministic JA→EN engine (hand-authored glossary + Hepburn romanization) used as the name fallback whenever there's no official English release yet.
-5. `build-data.js` — combines the above (official name/skill text first, local engine + scraped JP skill text as fallback) into `frontend/public/data/cards.json`.
+5. `build-data.js` — combines the above (official name/skill text first, local engine + scraped JP skill text as fallback) into `pipeline/data/cards.json`.
+6. `upload-cards.js` — uploads that file to the private Supabase Storage bucket, via its S3-compatible endpoint. Needs `SUPABASE_S3_*` env vars (see `.env.example`); run with `node --env-file=.env upload-cards.js`.
 
-**This runs on its own.** `.github/workflows/update-catalog.yml` re-scrapes yuyu-tei + cf-vanguard and commits a fresh `frontend/public/data/cards.json` to `main` daily (and on demand from the Actions tab) — that push is what triggers Vercel to redeploy. Nobody needs to run the pipeline locally or hand-commit its output for the site to stay up to date. The one piece the workflow deliberately skips is `scrape-card-detail.js` (see below) — its selectors are unverified and a full run takes hours, so it's a manual, occasional step.
+**This runs on its own**, via `refresh-and-push.ps1` on a recurring local Windows Task Scheduler job (see that file's header for why it's local-only and not a GitHub Actions cron: yuyu-tei hard-blocks GitHub's runner IPs). It scrapes, rebuilds `cards.json`, and uploads it straight to Supabase — no git commit, no Vercel redeploy needed for a data refresh; the live site just fetches fresh data through `/api/cards` (see below), subject to each visitor's own daily client-side cache. The one piece it deliberately skips is `scrape-card-detail.js` (see below) — its selectors are unverified and a full run takes hours, so it's a manual, occasional step.
 
 To run any of it by hand (e.g. to test a pipeline change, or to run `scrape-card-detail.js`):
 ```
 cd pipeline
 npm install
-npm run scrape                  # yuyu-tei catalog -> data/catalog-raw.json
-node scrape-cf-vanguard.js      # cf-vanguard reference -> data/cf-vanguard-raw.json
-node scrape-card-detail.js      # (optional, slow) JP skill text -> data/card-skills-raw.json
-node build-data.js              # writes frontend/public/data/cards.json
+npm run scrape                        # yuyu-tei catalog -> data/catalog-raw.json
+node scrape-cf-vanguard.js            # cf-vanguard reference -> data/cf-vanguard-raw.json
+node scrape-card-detail.js            # (optional, slow) JP skill text -> data/card-skills-raw.json
+node build-data.js                    # writes data/cards.json
+node --env-file=.env upload-cards.js  # uploads data/cards.json to Supabase Storage
 ```
 
 ### `frontend/`
 
-Plain static site — `npm install && npm run dev` (or `npm run build`). No environment variables or backend needed; it just fetches `/data/cards.json` at the site root.
+Vite + React static site — `npm install && npm run dev` (or `npm run build`). It fetches card data from `/api/cards`, a Vercel Function (`frontend/api/cards.js`) that proxies the private Supabase bucket so the S3 credentials never reach the browser; those credentials go in `frontend/.env.local` for local dev (see `pipeline/.env.example` for the variable names) and as Vercel project env vars in production.
 
 ## Data licensing note
 

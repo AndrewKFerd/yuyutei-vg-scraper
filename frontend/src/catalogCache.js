@@ -11,7 +11,11 @@
 // the app's card/price data effectively refreshes once a day per visitor.
 
 const CACHE_NAME = 'yuyutei-catalog-v1'
-const CACHE_URL = '/data/cards.json'
+// Proxied through our own /api/cards function (api/cards.js) rather than a
+// static public/data/cards.json -- the dataset now lives in a private
+// Supabase Storage bucket, and this endpoint is the only thing allowed to
+// read it (holds the S3 credentials server-side, never sent to the browser).
+const CACHE_URL = '/api/cards'
 const TIMESTAMP_KEY = 'yuyutei:catalogCachedAt'
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 1 day
 

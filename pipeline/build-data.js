@@ -2,8 +2,8 @@
 
 /**
  * Integration step: combine the scraped catalog with the official-name
- * matcher and the local glossary/romaji engine into the final static
- * dataset the frontend serves from /data/cards.json.
+ * matcher and the local glossary/romaji engine into the final dataset,
+ * written locally for upload-cards.js to push to Supabase Storage.
  *
  * For each card: prefer a confident official English name (cf-vanguard);
  * otherwise fall back to the locally-built translation engine.
@@ -18,7 +18,9 @@ const { groupKey } = require('./card-group');
 
 const CATALOG_PATH = path.join(__dirname, 'data', 'catalog-raw.json');
 const SKILLS_PATH = path.join(__dirname, 'data', 'card-details-raw.json');
-const OUT_PATH = path.join(__dirname, '..', 'frontend', 'public', 'data', 'cards.json');
+// Uploaded to Supabase Storage by upload-cards.js -- the frontend fetches
+// it through api/cards.js, a private-bucket proxy, not as a static asset.
+const OUT_PATH = path.join(__dirname, 'data', 'cards.json');
 
 function loadSkillsIndex() {
   try {
