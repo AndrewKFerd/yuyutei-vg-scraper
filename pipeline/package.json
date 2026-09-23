@@ -6,6 +6,7 @@
   "scripts": {
     "scrape": "node scrape-catalog.js",
     "scrape:skills": "node scrape-card-detail.js",
+    "scrape:fandom": "node scrape-fandom.js",
     "build": "node build-data.js",
     "upload": "node --env-file=.env upload-cards.js"
   },

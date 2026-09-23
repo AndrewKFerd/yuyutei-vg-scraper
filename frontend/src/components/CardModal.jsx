@@ -43,10 +43,15 @@ function Lightbox({ src, alt, onClose }) {
   )
 }
 
+// Page title -> URL on a fixed host, so dataset content can't redirect the link elsewhere.
+function wikiUrl(title) {
+  return `https://cardfight.fandom.com/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`
+}
+
 // Small "Grade 3" / "Power 13000" style pills next to the rarity badge.
-// Only ever populated for cards with a verified official English match
-// (see pipeline/match-official.js) -- null/undefined for everything else,
-// in which case the pill is simply not rendered.
+// Filled from the official English match, the wiki fan translation, or the
+// yuyu-tei detail scrape, in that order (see pipeline/build-data.js) --
+// null/undefined when none had it, in which case the pill isn't rendered.
 function StatPill({ value }) {
   if (value === null || value === undefined || value === '') return null
   return (
@@ -236,9 +241,31 @@ function CardModal({ card, currency, rates, onClose }) {
               {skillOpen && <SkillText card={card} />}
             </div>
 
-            {card.flavorJp && (
-              <p lang="ja" className="text-xs italic leading-relaxed text-slate-500 dark:text-gold-500/60">
-                {card.flavorJp}
+            {card.flavorEn ? (
+              <p className="whitespace-pre-line text-xs italic leading-relaxed text-slate-500 dark:text-gold-500/60">
+                {card.flavorEn}
+              </p>
+            ) : (
+              card.flavorJp && (
+                <p lang="ja" className="text-xs italic leading-relaxed text-slate-500 dark:text-gold-500/60">
+                  {card.flavorJp}
+                </p>
+              )
+            )}
+
+            {/* Wiki text is CC BY-SA -- credit and link the source page. */}
+            {card.translationSource === 'fandom' && (
+              <p className="text-[11px] text-slate-400 dark:text-gold-500/50">
+                English name and text: fan translation from the{' '}
+                <a
+                  href={wikiUrl(card.wikiTitle || card.nameEn)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-2 hover:text-slate-600 dark:hover:text-gold-500"
+                >
+                  Cardfight!! Vanguard Wiki
+                </a>{' '}
+                (CC BY-SA).
               </p>
             )}
           </div>
