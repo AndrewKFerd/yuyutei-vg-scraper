@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import RarityBadge from './RarityBadge'
 import { formatPrice } from '../currency'
 import { imageUrl2x, imageUrlHd } from '../images'
@@ -90,6 +90,7 @@ function SkillText({ card }) {
 
 function CardModal({ card, currency, rates, onClose }) {
   const [lightboxOpen, setLightboxOpen] = useState(false)
+  const closeLightbox = useCallback(() => setLightboxOpen(false), [])
   // Which scan the modal thumbnail is showing: start with the 500x700
   // "front" scan; if the CDN doesn't have one for this card, fall back to
   // the 2x thumbnail rather than a broken image.
@@ -266,7 +267,7 @@ function CardModal({ card, currency, rates, onClose }) {
         </div>
       </div>
 
-      {lightboxOpen && <Lightbox src={bigSrc} alt={altText} onClose={() => setLightboxOpen(false)} />}
+      {lightboxOpen && <Lightbox src={bigSrc} alt={altText} onClose={closeLightbox} />}
     </div>
   )
 }
