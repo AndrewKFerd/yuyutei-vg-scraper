@@ -6,6 +6,12 @@ pipeline/refresh.lock
 pipeline/data/catalog-raw.json
 pipeline/data/cf-vanguard-raw.json
 pipeline/data/cards.json
+pipeline/data/price-history.json
+pipeline/data/price-history.prev.json
+pipeline/data/history-public.json
+pipeline/data/movers.json
+pipeline/data/*.tmp
+pipeline/data/history-backups/
 .vercel
 .env*
 !.env.example

@@ -1,15 +1,18 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchCatalog, refreshCatalog } from './api'
 import { getRates } from './currency'
+import { DEFAULT_MOVER_WINDOW, MOVER_WINDOWS, pctChange } from './history'
 import { applyTheme, getInitialTheme } from './theme'
 import Header from './components/Header'
 import SearchBar from './components/SearchBar'
 import SetFilter from './components/SetFilter'
 import RarityFilter from './components/RarityFilter'
+import SortSelect from './components/SortSelect'
 import CurrencySelector from './components/CurrencySelector'
 import CardGrid from './components/CardGrid'
 import RaritySections from './components/RaritySections'
 import CardModal from './components/CardModal'
+import MoversView, { DEFAULT_MIN_PRICE } from './components/MoversView'
 import Pagination from './components/Pagination'
 import Footer from './components/Footer'
 
@@ -26,6 +29,84 @@ const RARITY_ORDER = ['SEC', 'SP', 'FFR', 'SR', 'RRR', 'RR', 'R', 'C']
 // is already memoized separately from pagination.
 const PAGE_SIZE = 50
 
+// Sort step (SortSelect), applied to the filtered list before pagination /
+// rarity sections. Array.prototype.sort is stable, so ties -- and every
+// card a 7-day sort doesn't rank -- keep the default catalog order.
+function sortCards(cards, sort) {
+  if (sort === 'price-asc' || sort === 'price-desc') {
+    const dir = sort === 'price-asc' ? 1 : -1
+    return [...cards].sort((a, b) => {
+      const aMissing = a.price == null
+      const bMissing = b.price == null
+      // Cards with no price sort last in both directions.
+      if (aMissing || bMissing) return aMissing - bMissing
+      return (a.price - b.price) * dir
+    })
+  }
+  if (sort === 'rise-7d' || sort === 'drop-7d') {
+    // chg7d is only present on listings whose price changed in the last 7
+    // days (see pipeline/build-data.js) -- those moving the chosen way come
+    // first by size of move, then everything else in default order.
+    const wantUp = sort === 'rise-7d'
+    const moved = []
+    const rest = []
+    for (const card of cards) {
+      const pct = card.chg7d ? pctChange(card.chg7d.from, card.price) : null
+      if (pct !== null && (wantUp ? pct > 0 : pct < 0)) moved.push({ card, pct })
+      else rest.push(card)
+    }
+    moved.sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct))
+    return [...moved.map((m) => m.card), ...rest]
+  }
+  return cards
+}
+
+// Shareable URL state, no router dependency: ?card=<id> opens that card's
+// modal (once the catalog has loaded), ?view=movers selects the Market
+// Movers tab and &w=24h|30d its window (the 7d default is left out).
+function readUrlState() {
+  const params = new URLSearchParams(window.location.search)
+  const w = params.get('w')
+  return {
+    view: params.get('view') === 'movers' ? 'movers' : 'search',
+    moversWindow: MOVER_WINDOWS.includes(w) ? w : DEFAULT_MOVER_WINDOW,
+    cardId: params.get('card') || null,
+  }
+}
+
+const VIEWS = [
+  ['search', 'Search'],
+  ['movers', 'Market Movers'],
+]
+
+function ViewTabs({ view, onChange }) {
+  return (
+    <div className="flex justify-center px-4 pt-5">
+      <div
+        role="group"
+        aria-label="View"
+        className="inline-flex rounded-full border border-slate-300 bg-white p-1 shadow-sm dark:border-night-600 dark:bg-night-800"
+      >
+        {VIEWS.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onChange(key)}
+            aria-pressed={view === key}
+            className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+              view === key
+                ? 'bg-brand-600 text-white shadow-sm dark:bg-brand-500 dark:text-night-950'
+                : 'text-slate-600 hover:text-brand-700 dark:text-gold-500/80 dark:hover:text-brand-400'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [cards, setCards] = useState([])
   const [meta, setMeta] = useState(null) // { generatedAt, count }
@@ -40,6 +121,16 @@ function App() {
   const [rates, setRates] = useState(null)
   const [selectedCard, setSelectedCard] = useState(null)
   const [theme, setTheme] = useState(getInitialTheme)
+  const [sort, setSort] = useState('default')
+  const [initialUrl] = useState(readUrlState)
+  const [view, setView] = useState(initialUrl.view) // 'search' | 'movers'
+  const [moversWindow, setMoversWindow] = useState(initialUrl.moversWindow)
+  const [minPrice, setMinPrice] = useState(DEFAULT_MIN_PRICE)
+  // A ?card= deep link waits here until the catalog has loaded.
+  const pendingCardIdRef = useRef(initialUrl.cardId)
+  // Bumped after a manual refresh (which also drops the history/movers
+  // caches) so the Movers view and card modal reload them.
+  const [dataVersion, setDataVersion] = useState(0)
 
   // index.html already applied the initial theme before first paint; this
   // keeps <html> in sync whenever the user toggles it afterwards.
@@ -70,6 +161,14 @@ function App() {
         if (cancelled) return
         setCards(data.cards)
         setMeta({ generatedAt: data.generatedAt, count: data.count, fromCache: data.fromCache })
+        // Open a deep-linked card in the same render the grid appears in
+        // (unknown ids are just ignored).
+        const deepLinkId = pendingCardIdRef.current
+        pendingCardIdRef.current = null
+        if (deepLinkId) {
+          const linked = data.cards.find((card) => card.id === deepLinkId)
+          if (linked) setSelectedCard(linked)
+        }
         setStatus('ready')
       })
       .catch((err) => {
@@ -91,6 +190,11 @@ function App() {
       .then((data) => {
         setCards(data.cards)
         setMeta({ generatedAt: data.generatedAt, count: data.count, fromCache: data.fromCache })
+        // The card modal can trigger this ("newer data than your cached
+        // catalog"): swap the open card for its fresh copy so the modal
+        // shows the new price/stock.
+        setSelectedCard((prev) => (prev ? data.cards.find((card) => card.id === prev.id) || prev : prev))
+        setDataVersion((v) => v + 1)
       })
       .catch((err) => {
         setErrorMessage(err.message)
@@ -98,6 +202,28 @@ function App() {
       })
       .finally(() => setIsRefreshing(false))
   }, [])
+
+  // Mirror view/window/open card into the URL so it can be shared. Uses
+  // replaceState (no history entries, no re-render, so no loop), and keeps
+  // any other params plus the path and hash untouched. While the catalog
+  // is still loading, a pending ?card= is left alone.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (view === 'movers') params.set('view', 'movers')
+    else params.delete('view')
+    if (view === 'movers' && moversWindow !== DEFAULT_MOVER_WINDOW) params.set('w', moversWindow)
+    else params.delete('w')
+    if (selectedCard) params.set('card', selectedCard.id)
+    else if (status !== 'loading') params.delete('card')
+    // "/" is legal in a query string; leaving it unescaped keeps shared
+    // links readable (?card=dzbt14/10318 rather than dzbt14%2F10318).
+    const query = params.toString().replace(/%2F/gi, '/')
+    const { pathname, search, hash } = window.location
+    const next = `${pathname}${query ? `?${query}` : ''}${hash}`
+    if (next !== `${pathname}${search}${hash}`) {
+      window.history.replaceState(window.history.state, '', next)
+    }
+  }, [view, moversWindow, selectedCard, status])
 
   // Fetch JPY exchange rates once on mount, independent of the catalog load
   // (currency defaults to JPY so this never blocks anything — it just makes
@@ -112,6 +238,9 @@ function App() {
       cancelled = true
     }
   }, [])
+
+  // id -> card, for joining movers.json entries against the catalog.
+  const cardsById = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards])
 
   // Distinct sets present in the loaded catalog, for the set search dropdown.
   const setOptions = useMemo(() => {
@@ -179,11 +308,14 @@ function App() {
     )
   }, [setScopedCards, searchText, deferredQuery, rarity])
 
-  // Whenever the effective filter changes, snap back to page 1 — otherwise
-  // narrowing a search while sitting on page 40 could land on an empty page.
+  const sortedCards = useMemo(() => sortCards(filteredCards, sort), [filteredCards, sort])
+
+  // Whenever the effective filter or sort changes, snap back to page 1 —
+  // otherwise narrowing a search while sitting on page 40 could land on an
+  // empty page (and a re-sort would drop you mid-list).
   useEffect(() => {
     setPage(1)
-  }, [deferredQuery, setSlug, rarity])
+  }, [deferredQuery, setSlug, rarity, sort])
 
   // A single set tops out around 300-400 cards (vs. tens of thousands for
   // the whole catalog), so once one is picked there's no need to paginate --
@@ -194,25 +326,26 @@ function App() {
   const safePage = Math.min(page, totalPages)
   const startIndex = (safePage - 1) * PAGE_SIZE
   const pageCards = useMemo(
-    () => filteredCards.slice(startIndex, startIndex + PAGE_SIZE),
-    [filteredCards, startIndex]
+    () => sortedCards.slice(startIndex, startIndex + PAGE_SIZE),
+    [sortedCards, startIndex]
   )
 
-  // Group filteredCards by rarity, in the same rarest-first order as the
-  // dropdown, for the sectioned single-set view. A rarity with no cards
-  // left after the search/rarity filters narrowed things down just doesn't
-  // get a section, rather than rendering an empty one.
+  // Group the (sorted) filtered cards by rarity, in the same rarest-first
+  // order as the dropdown, for the sectioned single-set view. A rarity with
+  // no cards left after the search/rarity filters narrowed things down just
+  // doesn't get a section, rather than rendering an empty one. The sort
+  // order carries through within each section.
   const raritySections = useMemo(() => {
     if (!isSetSelected) return []
     const byRarity = new Map()
-    for (const card of filteredCards) {
+    for (const card of sortedCards) {
       const key = card.rarity || ''
       if (!byRarity.has(key)) byRarity.set(key, [])
       byRarity.get(key).push(card)
     }
     const order = rarityOptions.length > 0 ? rarityOptions : Array.from(byRarity.keys())
     return order.filter((r) => byRarity.has(r)).map((r) => ({ rarity: r, cards: byRarity.get(r) }))
-  }, [isSetSelected, filteredCards, rarityOptions])
+  }, [isSetSelected, sortedCards, rarityOptions])
 
   const isFiltered = deferredQuery.trim().length > 0 || setSlug !== '' || rarity !== ''
   const rangeStart = filteredCards.length === 0 ? 0 : startIndex + 1
@@ -224,59 +357,105 @@ function App() {
       <Header meta={meta} theme={theme} onToggleTheme={toggleTheme} />
 
       <main className="flex-1">
-        <div className="py-6">
-          <SearchBar value={query} onChange={setQuery} />
+        <ViewTabs view={view} onChange={setView} />
 
-          <div className="mx-auto mt-3 flex max-w-2xl flex-wrap items-start justify-center gap-2 px-4">
-            <SetFilter options={setOptions} value={setSlug} onChange={setSetSlug} />
-            <RarityFilter options={rarityOptions} value={rarity} onChange={setRarity} />
-            <CurrencySelector value={currency} onChange={setCurrency} />
-          </div>
+        {/* The search view stays mounted (just hidden) while Movers shows,
+            so switching back doesn't re-run the search box's autofocus --
+            which would pop the keyboard open on phones -- or reset the set
+            filter's typed text. */}
+        <div hidden={view !== 'search'}>
+          <div className="pb-6 pt-4">
+            <SearchBar value={query} onChange={setQuery} />
 
-          <div className="mx-auto mt-3 max-w-xl px-4 text-center text-xs text-slate-500 dark:text-gold-500/70">
-            {status === 'ready' &&
-              (filteredCards.length === 0
-                ? isFiltered
-                  ? 'No cards match your search.'
-                  : 'No cards in catalog.'
-                : isSetSelected
-                  ? `Showing all ${countLabel} ${isFiltered ? 'matching ' : ''}cards`
-                  : `Showing ${rangeStart.toLocaleString()}-${rangeEnd.toLocaleString()} of ${countLabel} ${
-                      isFiltered ? 'matching ' : ''
-                    }cards`)}
-          </div>
-
-          {status === 'ready' && meta && (
-            <div className="mx-auto mt-1 max-w-xl px-4 text-center text-[11px] text-slate-400 dark:text-gold-500/50">
-              {meta.fromCache
-                ? 'Loaded from today’s local cache.'
-                : 'Freshly loaded — now cached for the rest of today.'}{' '}
-              <button
-                type="button"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                className="font-medium text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 dark:text-brand-400 dark:disabled:text-night-500"
-              >
-                {isRefreshing ? 'Refreshing…' : 'Refresh now'}
-              </button>
+            <div className="mx-auto mt-3 flex max-w-3xl flex-wrap items-start justify-center gap-2 px-4">
+              <SetFilter options={setOptions} value={setSlug} onChange={setSetSlug} />
+              <RarityFilter options={rarityOptions} value={rarity} onChange={setRarity} />
+              <SortSelect value={sort} onChange={setSort} />
+              <CurrencySelector value={currency} onChange={setCurrency} />
             </div>
+
+            <div className="mx-auto mt-3 max-w-xl px-4 text-center text-xs text-slate-500 dark:text-gold-500/70">
+              {status === 'ready' &&
+                (filteredCards.length === 0
+                  ? isFiltered
+                    ? 'No cards match your search.'
+                    : 'No cards in catalog.'
+                  : isSetSelected
+                    ? `Showing all ${countLabel} ${isFiltered ? 'matching ' : ''}cards`
+                    : `Showing ${rangeStart.toLocaleString()}-${rangeEnd.toLocaleString()} of ${countLabel} ${
+                        isFiltered ? 'matching ' : ''
+                      }cards`)}
+            </div>
+
+            {status === 'ready' && meta && (
+              <div className="mx-auto mt-1 max-w-xl px-4 text-center text-[11px] text-slate-400 dark:text-gold-500/50">
+                {meta.fromCache
+                  ? 'Loaded from today’s local cache.'
+                  : 'Freshly loaded — now cached for the rest of today.'}{' '}
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  className="font-medium text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 dark:text-brand-400 dark:disabled:text-night-500"
+                >
+                  {isRefreshing ? 'Refreshing…' : 'Refresh now'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {status === 'loading' && (
+            <div>
+              <p className="pb-4 text-center text-sm text-slate-500 dark:text-gold-500/70">
+                Loading full card catalog…
+              </p>
+              <div className="grid grid-cols-2 gap-3 px-4 pb-10 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+                {Array.from({ length: 16 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="aspect-[100/140] w-full animate-pulse rounded-md bg-slate-200 dark:bg-night-700"
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {status === 'ready' && isSetSelected && (
+            <RaritySections
+              sections={raritySections}
+              currency={currency}
+              rates={rates}
+              onSelect={setSelectedCard}
+            />
+          )}
+
+          {status === 'ready' && !isSetSelected && (
+            <>
+              <CardGrid
+                cards={pageCards}
+                currency={currency}
+                rates={rates}
+                onSelect={setSelectedCard}
+              />
+              <Pagination page={safePage} totalPages={totalPages} onChange={setPage} />
+            </>
           )}
         </div>
 
-        {status === 'loading' && (
-          <div>
-            <p className="pb-4 text-center text-sm text-slate-500 dark:text-gold-500/70">
-              Loading full card catalog…
-            </p>
-            <div className="grid grid-cols-2 gap-3 px-4 pb-10 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-              {Array.from({ length: 16 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="aspect-[100/140] w-full animate-pulse rounded-md bg-slate-200 dark:bg-night-700"
-                />
-              ))}
-            </div>
-          </div>
+        {view === 'movers' && status !== 'error' && (
+          <MoversView
+            cardsById={cardsById}
+            catalogReady={status === 'ready'}
+            dataVersion={dataVersion}
+            currency={currency}
+            rates={rates}
+            onCurrencyChange={setCurrency}
+            windowKey={moversWindow}
+            onWindowChange={setMoversWindow}
+            minPrice={minPrice}
+            onMinPriceChange={setMinPrice}
+            onSelect={setSelectedCard}
+          />
         )}
 
         {status === 'error' && (
@@ -288,27 +467,6 @@ function App() {
             <p className="mt-4 text-xs text-slate-400 dark:text-gold-500/50">Reload the page to try again.</p>
           </div>
         )}
-
-        {status === 'ready' && isSetSelected && (
-          <RaritySections
-            sections={raritySections}
-            currency={currency}
-            rates={rates}
-            onSelect={setSelectedCard}
-          />
-        )}
-
-        {status === 'ready' && !isSetSelected && (
-          <>
-            <CardGrid
-              cards={pageCards}
-              currency={currency}
-              rates={rates}
-              onSelect={setSelectedCard}
-            />
-            <Pagination page={safePage} totalPages={totalPages} onChange={setPage} />
-          </>
-        )}
       </main>
 
       <Footer />
@@ -318,6 +476,10 @@ function App() {
         currency={currency}
         rates={rates}
         onClose={closeModal}
+        catalogGeneratedAt={meta?.generatedAt}
+        onRefresh={handleRefresh}
+        isRefreshing={isRefreshing}
+        dataVersion={dataVersion}
       />
     </div>
   )

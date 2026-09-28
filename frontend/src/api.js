@@ -1,4 +1,5 @@
 import { clearCatalogCache, getCachedCatalog } from './catalogCache'
+import { clearHistoryCache } from './history'
 
 /**
  * Fetches the full pre-generated card catalog — every set, tens of
@@ -8,7 +9,7 @@ import { clearCatalogCache, getCachedCatalog } from './catalogCache'
  * this just downloads and parses it once on load.
  *
  * The first visit in a day downloads it fresh; any repeat visit within the
- * same day reuses a local cached copy instead of re-downloading a ~10MB
+ * same day reuses a local cached copy instead of re-downloading a ~30 MB
  * file every time (see catalogCache.js). The resolved object's `fromCache`
  * flag says which one happened.
  *
@@ -28,8 +29,12 @@ export async function fetchCatalog() {
   return { ...data, fromCache }
 }
 
-/** Drops the cached catalog and re-fetches fresh from the network. */
+/**
+ * Drops the cached catalog — and the price history / market movers caches,
+ * so they can't disagree with the fresh catalog — and re-fetches the
+ * catalog from the network. History/movers reload lazily when next needed.
+ */
 export async function refreshCatalog() {
-  await clearCatalogCache()
+  await Promise.all([clearCatalogCache(), clearHistoryCache()])
   return fetchCatalog()
 }

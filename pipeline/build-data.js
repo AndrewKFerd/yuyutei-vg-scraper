@@ -9,6 +9,11 @@
  * then, for D-/DZ- cards, a fan translation from the Cardfight!! Vanguard
  * wiki (scrape-fandom.js); otherwise fall back to the locally-built
  * translation engine.
+ *
+ * Also stamps listings whose price moved in the last 7 days with a small
+ * `chg7d` field (from price-history.json, which record-history.js has
+ * already updated this run), so tiles can show a change chip without
+ * loading the history file.
  */
 
 const fs = require('fs');
@@ -18,12 +23,51 @@ const { translateCardName } = require('./translate-engine');
 const { findOfficialName } = require('./match-official');
 const { findFandomCard } = require('./match-fandom');
 const { groupKey } = require('./card-group');
+const { checkCatalogSize, allowShrinkFromEnv } = require('./catalog-gate');
+const { toMinute, minuteToIso, normalizeHistory, computeChg7d } = require('./price-history');
 
 const CATALOG_PATH = path.join(__dirname, 'data', 'catalog-raw.json');
 const SKILLS_PATH = path.join(__dirname, 'data', 'card-details-raw.json');
+const HISTORY_PATH = path.join(__dirname, 'data', 'price-history.json');
 // Uploaded to Supabase Storage by upload-cards.js -- the frontend fetches
 // it through api/cards.js, a private-bucket proxy, not as a static asset.
 const OUT_PATH = path.join(__dirname, 'data', 'cards.json');
+
+// Run-gate baseline: the size of the catalog this build would replace.
+// Missing/unparseable -> null, leaving only the zero-cards check.
+function readExistingCount() {
+  try {
+    const existing = JSON.parse(fs.readFileSync(OUT_PATH, 'utf8'));
+    if (Array.isArray(existing.cards)) return existing.cards.length;
+    return Number.isFinite(existing.count) ? existing.count : null;
+  } catch {
+    return null;
+  }
+}
+
+function loadPriceHistory(scrapedAt) {
+  let history;
+  try {
+    history = normalizeHistory(JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8')));
+  } catch (err) {
+    console.warn(
+      `[build-data] Can't read ${HISTORY_PATH} (${err.message}) -- cards will have no chg7d. ` +
+      'Run record-history.js first if you want it.'
+    );
+    return null;
+  }
+  const asOf = history.runs[history.runs.length - 1];
+  const scrapedMinute = toMinute(Date.parse(scrapedAt));
+  if (asOf !== scrapedMinute) {
+    // chg7d still only appears where the history's latest price matches
+    // the card's, but "last 7 days" is measured from the history's last run.
+    console.warn(
+      `[build-data] price-history.json's last run (${minuteToIso(asOf)}) isn't this catalog's scrape ` +
+      `(${minuteToIso(scrapedMinute)}) -- run record-history.js before build-data.js for an up-to-date chg7d.`
+    );
+  }
+  return { history, asOf };
+}
 
 function loadSkillsIndex() {
   try {
@@ -50,11 +94,29 @@ function sanitizeUrl(url) {
 
 function main() {
   const raw = JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf8'));
+
+  // Never replace a good cards.json with an empty or partial one: the live
+  // site was once sent 0 cards (three times) and 22,235 of 28k (once), and
+  // visitors' clients cache whatever they get for a day. Checked before any
+  // work, so a bad catalog leaves the existing file untouched.
+  const gate = checkCatalogSize(
+    Array.isArray(raw.cards) ? raw.cards.length : 0,
+    readExistingCount(),
+    { allowShrink: allowShrinkFromEnv() }
+  );
+  if (!gate.ok) {
+    console.error(`[build-data] ${gate.message} ${OUT_PATH} was left unchanged.`);
+    process.exit(1);
+  }
+  if (gate.message) console.warn(`[build-data] ${gate.message}`);
+
   const skillsIndex = loadSkillsIndex();
+  const priceHistory = loadPriceHistory(raw.scrapedAt);
   const sourceCounts = { official: 0, fandom: 0, glossary: 0, romaji: 0, mixed: 0, passthrough: 0 };
   let droppedUrls = 0;
   let skillTextEnCount = 0;
   let skillTextJpCount = 0;
+  let chg7dCount = 0;
 
   const cards = raw.cards.map((c) => {
     let nameEn;
@@ -132,12 +194,19 @@ function main() {
     const detailUrl = sanitizeUrl(c.detailUrl);
     if (!imageUrl || !detailUrl) droppedUrls++;
 
+    // c.id is yuyu-tei's per-set product number, not globally unique
+    // (yuyu-tei reuses it across sets) — compose with setSlug so every
+    // card in this catalog has a truly unique id (used as the frontend's
+    // React list key, and as the price history's listing key).
+    const id = `${c.setSlug}/${c.id}`;
+
+    const chg7d = priceHistory
+      ? computeChg7d(priceHistory.history.cards[id], priceHistory.asOf, c.price)
+      : null;
+    if (chg7d) chg7dCount++;
+
     return {
-      // c.id is yuyu-tei's per-set product number, not globally unique
-      // (yuyu-tei reuses it across sets) — compose with setSlug so every
-      // card in this catalog has a truly unique id (used as the frontend's
-      // React list key).
-      id: `${c.setSlug}/${c.id}`,
+      id,
       setCode: c.setCode,
       setSlug: c.setSlug,
       rarity: c.rarity,
@@ -166,6 +235,10 @@ function main() {
       price: c.price,
       priceDisplay: c.priceDisplay,
       stock: c.stock,
+      // { from, at } -- the price 7 days ago and the minute it last changed
+      // -- only on listings whose price moved in that window; omitted
+      // (not null) otherwise to keep the ~30 MB payload from growing.
+      ...(chg7d ? { chg7d } : {}),
       imageUrl,
       detailUrl,
     };
@@ -183,6 +256,7 @@ function main() {
   console.log(`Wrote ${cards.length} cards to ${OUT_PATH}`);
   console.log('translationSource breakdown:', sourceCounts);
   console.log(`Skill text: ${skillTextEnCount} English (official or fan),${skillTextJpCount} scraped (JP).`);
+  if (priceHistory) console.log(`chg7d: ${chg7dCount} card(s) changed price in the 7 days to ${minuteToIso(priceHistory.asOf)}.`);
   if (droppedUrls > 0) {
     console.warn(`${droppedUrls} card(s) had an imageUrl/detailUrl outside the yuyu-tei.jp allowlist (set to null).`);
   }

@@ -1,12 +1,20 @@
-// Shared by api/cards.js (Vercel Function, production) and vite.config.js's
-// dev middleware (local `npm run dev`) -- one code path either way, so
-// local testing actually exercises the same S3 call production makes.
+// Shared by the api/*.js proxy routes (Vercel Functions, production) and
+// vite.config.js's dev middleware (local `npm run dev`) -- one code path
+// either way, so local testing actually exercises the same S3 call
+// production makes.
 //
 // The bucket is deliberately private (not "public" storage) -- this is the
 // only server-side path allowed to read it. Credentials live in
 // SUPABASE_S3_* env vars (Vercel project settings in prod, .env.local
 // locally) and are never sent to the browser.
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
+
+// The bucket also holds objects that must never be public -- above all
+// price-history.json, the private canonical history the pipeline keeps as
+// a backup. Only these keys are servable; anything else is refused before
+// any request reaches S3, so a future route (or a bug that lets a caller
+// influence the key) can't turn this into a read-anything proxy.
+const SERVABLE_KEYS = new Set(['cards.json', 'history-public.json', 'movers.json'])
 
 let client = null
 
@@ -24,11 +32,14 @@ function getClient() {
   return client
 }
 
-/** Resolves to the cards.json object's readable body stream. */
-export async function fetchCardsStream() {
+/** Resolves to the readable body stream of an allowlisted bucket object. */
+export async function fetchObjectStream(key) {
+  if (!SERVABLE_KEYS.has(key)) {
+    throw new Error(`Refusing to read non-servable object key "${key}"`)
+  }
   const result = await getClient().send(new GetObjectCommand({
     Bucket: process.env.SUPABASE_S3_BUCKET,
-    Key: 'cards.json',
+    Key: key,
   }))
   return result.Body
 }

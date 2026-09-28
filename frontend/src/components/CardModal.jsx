@@ -1,6 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import RarityBadge from './RarityBadge'
+import DeltaChip from './DeltaChip'
+import PriceHistoryChart from './PriceHistoryChart'
 import { formatPrice } from '../currency'
+import {
+  describeChangeTime,
+  formatDate,
+  formatDateTime,
+  formatPctSigned,
+  getSeries,
+  isoToMinute,
+  loadHistory,
+  newerThanCatalog,
+  pctChange,
+  summarizeSeries,
+} from '../history'
 import { imageUrl2x, imageUrlHd } from '../images'
 import { stockInfo } from '../stock'
 
@@ -93,7 +107,131 @@ function SkillText({ card }) {
   )
 }
 
-function CardModal({ card, currency, rates, onClose }) {
+// Shown when history recorded a change after the visitor's cached catalog
+// was built, so the footer's price/stock (from that catalog) is out of date.
+function StaleCatalogNote({ latest, catalogMinute, currency, rates, onRefresh, isRefreshing }) {
+  const [at, price, stock] = latest
+  return (
+    <div className="rounded-md border border-gold-300 bg-gold-50 px-3 py-2 text-xs leading-relaxed text-slate-700 dark:border-gold-700/50 dark:bg-night-700 dark:text-gold-500">
+      <span className="font-semibold">Newer data:</span> {formatPrice(price, currency, rates)} ·{' '}
+      {stockInfo(stock).label} as of {formatDateTime(at)} — the price and stock shown below are from your cached
+      catalog ({formatDateTime(catalogMinute)}).{' '}
+      {onRefresh && (
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isRefreshing}
+          className="font-semibold text-brand-700 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 dark:text-brand-400 dark:disabled:text-night-500"
+        >
+          {isRefreshing ? 'Refreshing…' : 'Refresh now'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+// "Price history" block. `history` is undefined while loading, null when
+// the history file isn't available (then the section just doesn't show --
+// history is an extra, never an error state), else history-public.json.
+function PriceHistorySection({ card, history, currency, rates, catalogGeneratedAt, onRefresh, isRefreshing }) {
+  if (history === undefined) {
+    return <p className="animate-pulse text-xs text-slate-400 dark:text-gold-500/50">Loading price history…</p>
+  }
+  if (history === null) return null
+
+  const heading = (
+    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-gold-500/60">
+      Price history
+    </h3>
+  )
+
+  const series = getSeries(history, card.id)
+  // Cards whose only entry is the tracking baseline are stripped from the
+  // public file, so "absent" means "no change since tracking began".
+  if (!series) {
+    return (
+      <section className="flex flex-col gap-1">
+        {heading}
+        <p className="text-xs text-slate-500 dark:text-gold-500/70">
+          Price unchanged since tracking began ({formatDate(history.trackingSince, { year: true })}).
+        </p>
+      </section>
+    )
+  }
+
+  const fmt = (p) => formatPrice(p, currency, rates)
+  const { low, high, changes, lastChange, firstSeen } = summarizeSeries(series)
+  const firstSeenLater = firstSeen > history.trackingSince
+  // Drawing needs some width: a listing first seen in the latest run is a
+  // single point in time, which reads better as text.
+  const chartable = history.lastRun - firstSeen >= 60
+  const lastPct = lastChange ? pctChange(lastChange.from, lastChange.to) : null
+  const strong = 'font-semibold text-slate-700 dark:text-gold-500'
+  const catalogMinute = isoToMinute(catalogGeneratedAt)
+  const newer = newerThanCatalog(series, card, catalogMinute)
+
+  return (
+    <section className="flex flex-col gap-2">
+      {newer && (
+        <StaleCatalogNote
+          latest={newer}
+          catalogMinute={catalogMinute}
+          currency={currency}
+          rates={rates}
+          onRefresh={onRefresh}
+          isRefreshing={isRefreshing}
+        />
+      )}
+      {chartable ? (
+        <PriceHistoryChart
+          key={card.id}
+          series={series}
+          coverage={history.coverage}
+          lastRun={history.lastRun}
+          currency={currency}
+          rates={rates}
+        />
+      ) : (
+        heading
+      )}
+      <div className="flex flex-col gap-0.5 text-xs text-slate-500 dark:text-gold-500/70">
+        {changes > 0 ? (
+          <p>
+            Low <span className={strong}>{fmt(low)}</span> · High <span className={strong}>{fmt(high)}</span> ·{' '}
+            {changes} {changes === 1 ? 'change' : 'changes'}
+          </p>
+        ) : (
+          <p>
+            No price changes since {firstSeenLater ? 'first seen' : 'tracking began'} (
+            {formatDate(firstSeen, { year: true })}) · <span className={strong}>{fmt(low)}</span>
+          </p>
+        )}
+        {lastChange && (
+          <p>
+            Last change{' '}
+            {lastPct !== null && (
+              <span
+                className={`font-semibold ${
+                  lastPct > 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                }`}
+              >
+                {formatPctSigned(lastPct)}
+              </span>
+            )}{' '}
+            ({fmt(lastChange.from)} → {fmt(lastChange.to)}) · changed{' '}
+            {describeChangeTime(lastChange.at, history.coverage)}
+          </p>
+        )}
+        {firstSeenLater && changes > 0 && <p>First seen {formatDate(firstSeen, { year: true })}.</p>}
+      </div>
+    </section>
+  )
+}
+
+// `catalogGeneratedAt` / `onRefresh` / `isRefreshing` drive the "newer data
+// than your cached catalog" note; `dataVersion` changes after a catalog
+// refresh (which also drops the history cache) so history reloads.
+function CardModal({ card, currency, rates, onClose, catalogGeneratedAt, onRefresh, isRefreshing, dataVersion }) {
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const closeLightbox = useCallback(() => setLightboxOpen(false), [])
   // Which scan the modal thumbnail is showing: start with the 500x700
@@ -104,13 +242,33 @@ function CardModal({ card, currency, rates, onClose }) {
   // which used to push the sticky footer (price/stock/outbound link) far
   // enough down that reaching it meant scrolling past a wall of text first.
   const [skillOpen, setSkillOpen] = useState(false)
+  // undefined = not loaded yet; null = unavailable. Kept across cards: the
+  // loader is memoized per session, so after the first open this resolves
+  // straight away.
+  const [history, setHistory] = useState(undefined)
 
-  // Reset per card so a previous card's fallback/lightbox/skill state doesn't leak.
+  // Reset per card so a previous card's fallback/lightbox/skill state doesn't
+  // leak. Keyed on the id, not the object: a catalog refresh swaps in a
+  // fresh object for the same card, which shouldn't collapse what's open.
+  const cardId = card?.id
   useEffect(() => {
     setLightboxOpen(false)
     setHdFailed(false)
     setSkillOpen(false)
-  }, [card])
+  }, [cardId])
+
+  // History is fetched lazily, on the first modal open -- never on page
+  // load, so visitors who only browse never download it.
+  useEffect(() => {
+    if (!card) return
+    let cancelled = false
+    loadHistory().then((h) => {
+      if (!cancelled) setHistory(h)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [card, dataVersion])
 
   // Escape-to-close, and lock page scroll while the modal is open -- both
   // only need to be active while a card is actually selected.
@@ -166,12 +324,15 @@ function CardModal({ card, currency, rates, onClose }) {
             footer outside the scroll container means the link is always
             reachable regardless of how tall the content above it gets. */}
         <div className="flex min-h-0 flex-col gap-5 overflow-y-auto p-5 sm:grid sm:grid-cols-[200px_1fr] sm:p-6">
+          {/* shrink-0: in the phone (flex-col) layout, tall content below --
+              e.g. the price history -- would otherwise squash the art into a
+              thin strip. No-op in the sm: grid layout. */}
           <button
             type="button"
             onClick={() => setLightboxOpen(true)}
             aria-label="View full-size card image"
             title="View full size"
-            className="group relative aspect-[100/140] w-36 max-h-[38vh] cursor-zoom-in self-center overflow-hidden rounded-md bg-slate-100 sm:w-full dark:bg-night-700 sm:max-h-none sm:self-auto"
+            className="group relative aspect-[100/140] w-36 max-h-[38vh] shrink-0 cursor-zoom-in self-center overflow-hidden rounded-md bg-slate-100 sm:w-full dark:bg-night-700 sm:max-h-none sm:self-auto"
           >
             <img
               src={bigSrc}
@@ -268,12 +429,25 @@ function CardModal({ card, currency, rates, onClose }) {
                 (CC BY-SA).
               </p>
             )}
+
+            <PriceHistorySection
+              card={card}
+              history={history}
+              currency={currency}
+              rates={rates}
+              catalogGeneratedAt={catalogGeneratedAt}
+              onRefresh={onRefresh}
+              isRefreshing={isRefreshing}
+            />
           </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 sm:px-6 dark:border-night-600">
-          <div className="flex items-center gap-3">
-            <span className="text-xl font-bold text-brand-700 dark:text-brand-400">{displayPrice}</span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="flex items-center gap-1.5">
+              <span className="text-xl font-bold text-brand-700 dark:text-brand-400">{displayPrice}</span>
+              {card.chg7d && <DeltaChip from={card.chg7d.from} to={card.price} period="7 days" suffix="7d" />}
+            </span>
             <span
               className={`text-xs font-semibold ${inStock ? 'text-green-600' : 'text-red-500'}`}
             >

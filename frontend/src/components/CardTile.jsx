@@ -1,11 +1,19 @@
 import { memo } from 'react'
 import RarityBadge from './RarityBadge'
+import DeltaChip from './DeltaChip'
 import { formatPrice } from '../currency'
 import { imageUrl2x } from '../images'
 import { stockInfo } from '../stock'
 
-function CardTile({ card, currency, rates, onSelect }) {
+// `delta` ({from, to, period?}) and `caption` are for the Movers view: the
+// change over the selected window (overrides the card's own 7-day chg7d
+// chip; `null` means no chip at all) and a short note under the price
+// ("+2 printings", "Sold 6"). Callers must pass a memoized `delta` object --
+// a fresh one per render would defeat memo() below and re-render every tile.
+function CardTile({ card, currency, rates, onSelect, delta, caption }) {
   const { inStock, label: stockLabel } = stockInfo(card.stock)
+  const chip =
+    delta !== undefined ? delta : card.chg7d ? { from: card.chg7d.from, to: card.price, period: '7 days' } : null
   const url2x = imageUrl2x(card.imageUrl)
   const displayPrice =
     currency && currency !== 'JPY' ? formatPrice(card.price, currency, rates) : card.priceDisplay
@@ -34,6 +42,11 @@ function CardTile({ card, currency, rates, onSelect }) {
         <div className="absolute left-1 top-1">
           <RarityBadge rarity={card.rarity} />
         </div>
+        {chip && (
+          <div className="absolute right-1 top-1">
+            <DeltaChip from={chip.from} to={chip.to} period={chip.period} variant="overlay" />
+          </div>
+        )}
         {!inStock && (
           <div className="absolute inset-x-0 bottom-0 bg-black/60 py-0.5 text-center text-[10px] font-semibold uppercase tracking-wide text-white">
             Out of stock
@@ -58,11 +71,15 @@ function CardTile({ card, currency, rates, onSelect }) {
             {stockLabel}
           </span>
         </div>
+        {caption && (
+          <span className="truncate text-[11px] font-medium text-slate-500 dark:text-gold-500/70">{caption}</span>
+        )}
       </div>
     </button>
   )
 }
 
 // Cards are immutable once fetched, so a shallow prop comparison on `card`
-// is enough to keep unrelated tiles from re-rendering while the user types.
+// (plus the stable `delta`/`caption` the Movers view passes) is enough to
+// keep unrelated tiles from re-rendering while the user types.
 export default memo(CardTile)
