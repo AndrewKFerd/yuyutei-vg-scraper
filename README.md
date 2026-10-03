@@ -27,18 +27,20 @@ frontend/api/ -> cards.js, history.js, movers.js: Vercel Functions that proxy
 ### `pipeline/`
 
 1. `scrape-catalog.js` — paginates yuyu-tei's global VG search endpoint and writes every set's card listings to `pipeline/data/catalog-raw.json` (~28k cards across 300+ sets).
-2. `scrape-cf-vanguard.js` + `match-official.js` — scrapes the official English Cardfight!! Vanguard database and, where a card's JP set code has a verified English release, supplies its real official name plus its kind/clan/grade/power/shield and English skill text.
-3. `scrape-card-detail.js` — fetches each card's own yuyu-tei detail page for its Japanese skill text, as a fallback for cards with no official English release yet. This is a per-card scrape (~28k requests) so it's slow (multiple hours) and resumable/checkpointed; run it as a separate, optional step. **Its selectors are unverified — see the file header before trusting a full run.**
+2. `scrape-cf-vanguard.js` + `match-official.js` — scrapes the official English Cardfight!! Vanguard database and, where a card's JP set code has a verified English release, supplies its real official name plus its kind/clan/grade/power/shield and English skill text. An incomplete scrape (a set that didn't fully load, a family cut short) or one >2% smaller than the last keeps the previous `cf-vanguard-raw.json` instead of overwriting it (`reference-gate.js`), and still exits 0 so the refresh carries on with the last good names.
+3. `scrape-card-detail.js` — fetches each card's own yuyu-tei detail page for its Japanese skill text, as a fallback for cards with no official English release yet. This is a per-card scrape (~28k requests) so it's slow (multiple hours) and resumable/checkpointed; run it as a separate, optional step. Every run (including `--force`, `--sets` and `--limit` ones) merges into the existing `card-details-raw.json` rather than replacing it. **Its selectors are unverified — see the file header before trusting a full run.**
 4. `scrape-fandom.js` + `match-fandom.js` — pulls fan-translated English names, card text and flavor for D-/DZ- cards from the [Cardfight!! Vanguard Wiki](https://cardfight.fandom.com) via its MediaWiki API (~700 requests, ~10 min), matched by card code, then by Japanese name. Used for D-/DZ- cards with no official English release; the card popup credits and links the wiki page (the text is CC BY-SA). Manual, occasional step, since wiki text changes slowly.
 5. `translate-engine.js` + `data/glossary.json` — a zero-network, deterministic JA→EN engine (hand-authored glossary + Hepburn romanization) used as the name fallback whenever there's no official English release yet.
 6. `record-history.js` + `price-history.js` — appends this run's prices/stock to `data/price-history.json`, a change log (a listing gets a new `[minute, price, stock]` entry only when something changed), then writes the served `data/history-public.json` (card charts) and `data/movers.json` (24h/7d/30d risers, drops, sold out, restocked, selling fast). It keeps `price-history.prev.json` plus one dated copy per day in `data/history-backups/` (newest 14). It never starts a fresh history silently: a missing local file is restored from the bucket (so run it with `--env-file=.env`), and only if the bucket has none either does it accept `backfill-history.js` (seeds the history from the `cards.json` snapshots in git, Sep 15–18 2026) or `HISTORY_INIT=1`.
 7. `build-data.js` — combines the above (official name/skill text first, then the wiki fan translation for D-/DZ- cards, then the local engine + scraped JP skill text) into `pipeline/data/cards.json`, with a small `chg7d` field on listings whose price moved in the last 7 days.
 8. `upload-cards.js` — uploads `price-history.json` (private backup, never served), `history-public.json`, `movers.json` and `cards.json` to the private Supabase Storage bucket, via its S3-compatible endpoint. Needs `SUPABASE_S3_*` env vars (see `.env.example`); run with `node --env-file=.env upload-cards.js`.
 
-**Safety gates** (each exits 1, which aborts the scheduled run before anything is recorded or uploaded) and their manual overrides:
+**Safety gates** (each exits 1, which aborts the scheduled run before anything is recorded or uploaded — except the cf-vanguard one, which keeps the previous file and lets the run continue) and their manual overrides:
 
 | Gate | Where | Override |
 |---|---|---|
+| cf-vanguard scrape is incomplete (a set parsed fewer cards than the site reported, or a family was cut short by a failed request) or >2% smaller than the previous `cf-vanguard-raw.json` — keeps the previous file | `scrape-cf-vanguard.js` | `ALLOW_OFFICIAL_SHRINK=1` |
+| Over 2% of the listings that had an official English name in the previous `cards.json` (and are still listed) would lose it | `build-data.js` | `ALLOW_OFFICIAL_SHRINK=1` |
 | Catalog is empty, or more than 2% smaller than the largest of the last 7 days' runs (`build-data.js`: than the `cards.json` it would replace) — a partial scrape; one skipped page is ~2% | `record-history.js`, `build-data.js` | `ALLOW_CATALOG_SHRINK=1` (also makes the smaller count the new baseline) |
 | Catalog content looks misread: under 90% of listings have a parseable price, or over 25% of tracked listings changed at once | `record-history.js` | `ALLOW_MASS_CHANGE=1` |
 | No price history locally, and the bucket has none either (or couldn't be checked) | `record-history.js` | `HISTORY_INIT=1` (starts empty; only honored once the bucket was checked) |
@@ -57,7 +59,8 @@ npm run scrape                        # yuyu-tei catalog -> data/catalog-raw.jso
 node --env-file=.env backfill-history.js  # (one-off; refuses if a history exists locally or in the bucket) seeds data/price-history.json from git
 node --env-file=.env record-history.js  # records the catalog -> data/price-history.json, history-public.json, movers.json
 node scrape-cf-vanguard.js            # cf-vanguard reference -> data/cf-vanguard-raw.json
-node scrape-card-detail.js            # (optional, slow) JP skill text -> data/card-skills-raw.json
+node scrape-card-detail.js            # (optional, slow) JP skill text -> data/card-details-raw.json
+node scrape-set.js <slug>             # (optional) refresh one set in catalog-raw.json; the history records it at the next full scrape
 node scrape-fandom.js                 # (occasional) D-/DZ- fan translations -> data/fandom-raw.json
 node build-data.js                    # writes data/cards.json
 node --env-file=.env upload-cards.js  # uploads the history files + data/cards.json to Supabase Storage

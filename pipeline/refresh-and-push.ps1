@@ -25,10 +25,14 @@
 #     missing it restores it from the bucket, and it refuses to start a
 #     fresh one otherwise (see its header; ALLOW_CATALOG_SHRINK=1,
 #     ALLOW_MASS_CHANGE=1 and HISTORY_INIT=1 are the manual overrides).
-#  3. scrape-cf-vanguard.js -> data/cf-vanguard-raw.json
-#  4. build-data.js      -> data/cards.json (applies the same gate against
-#     the cards.json it would replace, and adds each listing's chg7d from
-#     the history step 2 just updated)
+#  3. scrape-cf-vanguard.js -> data/cf-vanguard-raw.json -- but only if the
+#     scrape is complete and not >2% smaller than the last one; otherwise it
+#     keeps the previous file and exits 0, so the run carries on with the
+#     last good official names (reference-gate.js)
+#  4. build-data.js      -> data/cards.json (applies the same size gate
+#     against the cards.json it would replace, refuses to drop >2% of the
+#     listings that had an official English name, and adds each listing's
+#     chg7d from the history step 2 just updated)
 #  5. upload-cards.js    -> uploads price-history.json (private backup),
 #     history-public.json, movers.json, then cards.json -- or nothing at
 #     all if the local history is <90% the size of the bucket's copy (the
@@ -75,6 +79,11 @@ $lockFile = Join-Path $pipelineDir 'refresh.lock'
 # crashed run (this script always removes its own lock, success or failure)
 # and is taken over rather than left to block every future run forever.
 $staleLockMinutes = 25
+# refresh.log grows ~1 MB a week at 48 runs/day; past this size it's moved
+# to refresh.old.log (replacing the previous one), so at most ~2x this is
+# kept. Both names match .gitignore's *.log.
+$maxLogBytes = 5MB
+$oldLogFile = Join-Path $pipelineDir 'refresh.old.log'
 
 function Log($msg) {
     $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $msg"
@@ -109,6 +118,18 @@ if (Test-Path -LiteralPath $lockFile) {
     Log "Stale lock found ($([int]$ageMinutes) min old, a previous run likely crashed) -- taking over."
 }
 [System.IO.File]::WriteAllText($lockFile, (Get-Date).ToString('o'))
+
+# Rotated only once the lock is ours, so a run that's about to be skipped
+# can't move the log out from under one that's still writing to it. A
+# failed rotation (the log open in an editor) just waits for the next run.
+try {
+    if ([System.IO.File]::Exists($logFile) -and (New-Object System.IO.FileInfo $logFile).Length -gt $maxLogBytes) {
+        if ([System.IO.File]::Exists($oldLogFile)) { [System.IO.File]::Delete($oldLogFile) }
+        [System.IO.File]::Move($logFile, $oldLogFile)
+    }
+} catch {
+    Log "Couldn't rotate refresh.log ($($_.Exception.Message)); continuing."
+}
 
 try {
     Set-Location -LiteralPath $pipelineDir

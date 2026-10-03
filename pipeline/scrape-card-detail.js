@@ -35,14 +35,18 @@
  * (~17k groups for ~28k listings) and one representative page is fetched
  * per group. Output is keyed by that group key; build-data.js copies each
  * result to every listing in the group. Checkpoints to disk every
- * CHECKPOINT_EVERY cards. A re-run skips cards already fetched (hit or confirmed-empty), so
- * an interrupted run resumes. --force refetches everything.
+ * CHECKPOINT_EVERY cards. A re-run skips cards that already have effect
+ * text, so an interrupted run resumes. --force refetches every card in
+ * scope (combine with --sets/--limit to narrow it); either way results are
+ * merged into the existing file, never replacing cards outside the run.
+ * An unreadable checkpoint stops the run rather than starting over, since
+ * the first checkpoint write would otherwise overwrite hours of results.
  *
  * Usage:
  *   node scrape-card-detail.js                       # full run (resumable)
  *   node scrape-card-detail.js --limit 20             # smoke test
  *   node scrape-card-detail.js --sets dzss19,dzbt16   # only these setSlugs
- *   node scrape-card-detail.js --force                # ignore checkpoint
+ *   node scrape-card-detail.js --force                # refetch cards that already have text
  */
 
 const fs = require('fs');
@@ -50,6 +54,7 @@ const path = require('path');
 const cheerio = require('cheerio');
 const { createCookieJar, browserGet } = require('./http-client');
 const { groupKey, isPlainPrinting } = require('./card-group');
+const { writeFileAtomic } = require('./fs-atomic');
 
 const SITE_ROOT = 'https://yuyu-tei.jp/';
 
@@ -199,22 +204,26 @@ async function fetchWithRetry(url, jar) {
   }
 }
 
-function loadCheckpoint(force) {
-  if (force || !fs.existsSync(OUTPUT_PATH)) return {};
+// Always loaded, --force or not: this run's results are merged into it, so
+// a scoped run (--sets/--limit) can never drop the cards outside its scope.
+function loadCheckpoint() {
+  if (!fs.existsSync(OUTPUT_PATH)) return {};
   try {
     return JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf8')).skills || {};
   } catch (err) {
-    console.warn(`[warn] Could not read ${OUTPUT_PATH} (${err.message}). Starting fresh.`);
-    return {};
+    console.error(
+      `Could not read ${OUTPUT_PATH} (${err.message}) -- refusing to start over, since the first checkpoint ` +
+      'would overwrite it. Restore it (it is committed: git checkout -- pipeline/data/card-details-raw.json) ' +
+      'or delete it to deliberately start from scratch.'
+    );
+    process.exit(1);
   }
 }
 
 function writeOutput(skills) {
-  fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
-  fs.writeFileSync(
+  writeFileAtomic(
     OUTPUT_PATH,
-    JSON.stringify({ scrapedAt: new Date().toISOString(), count: Object.keys(skills).length, skills }),
-    'utf8'
+    JSON.stringify({ scrapedAt: new Date().toISOString(), count: Object.keys(skills).length, skills })
   );
 }
 
@@ -239,7 +248,7 @@ async function main() {
     process.exit(1);
   }
 
-  const skills = loadCheckpoint(force);
+  const skills = loadCheckpoint();
   const startedWith = Object.keys(skills).length;
 
   // A card is "done" once it has an effect text. Cards with an attribute
@@ -256,6 +265,7 @@ async function main() {
     if (!cur || (!isPlainPrinting(cur) && isPlainPrinting(c))) reps.set(k, c);
   }
   let queue = Array.from(reps.values()).filter((c) => {
+    if (force) return true;
     const prev = skills[groupKey(c)];
     return !(prev && prev.effect);
   });
@@ -290,7 +300,11 @@ async function main() {
         failures++; // left unset so a future run retries it
       } else {
         const detail = extractDetail(cheerio.load(html));
-        if (!detail) {
+        if (!(detail && detail.effect) && skills[key]?.effect) {
+          // --force refetch came back without text (a blank page, changed
+          // markup): keep the text we already had rather than erase it.
+          empty++;
+        } else if (!detail) {
           empty++;
           skills[key] = { effect: null };
         } else {

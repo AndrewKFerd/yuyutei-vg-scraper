@@ -24,7 +24,9 @@ const { findOfficialName } = require('./match-official');
 const { findFandomCard } = require('./match-fandom');
 const { groupKey } = require('./card-group');
 const { checkCatalogSize, allowShrinkFromEnv } = require('./catalog-gate');
+const { checkOfficialRetention, allowOfficialShrinkFromEnv } = require('./reference-gate');
 const { toMinute, minuteToIso, normalizeHistory, computeChg7d } = require('./price-history');
+const { writeFileAtomic } = require('./fs-atomic');
 
 const CATALOG_PATH = path.join(__dirname, 'data', 'catalog-raw.json');
 const SKILLS_PATH = path.join(__dirname, 'data', 'card-details-raw.json');
@@ -33,15 +35,22 @@ const HISTORY_PATH = path.join(__dirname, 'data', 'price-history.json');
 // it through api/cards.js, a private-bucket proxy, not as a static asset.
 const OUT_PATH = path.join(__dirname, 'data', 'cards.json');
 
-// Run-gate baseline: the size of the catalog this build would replace.
-// Missing/unparseable -> null, leaving only the zero-cards check.
-function readExistingCount() {
+// Baselines from the cards.json this build would replace: its size (the
+// run gate) and which listings had an official English name (the official
+// retention gate). Missing/unparseable -> count null (only the zero-cards
+// check) and no official ids (no retention check).
+function readExisting() {
   try {
     const existing = JSON.parse(fs.readFileSync(OUT_PATH, 'utf8'));
-    if (Array.isArray(existing.cards)) return existing.cards.length;
-    return Number.isFinite(existing.count) ? existing.count : null;
+    if (!Array.isArray(existing.cards)) {
+      return { count: Number.isFinite(existing.count) ? existing.count : null, officialIds: new Set() };
+    }
+    const officialIds = new Set(
+      existing.cards.filter((c) => c && c.translationSource === 'official').map((c) => c.id)
+    );
+    return { count: existing.cards.length, officialIds };
   } catch {
-    return null;
+    return { count: null, officialIds: new Set() };
   }
 }
 
@@ -99,9 +108,10 @@ function main() {
   // site was once sent 0 cards (three times) and 22,235 of 28k (once), and
   // visitors' clients cache whatever they get for a day. Checked before any
   // work, so a bad catalog leaves the existing file untouched.
+  const existing = readExisting();
   const gate = checkCatalogSize(
     Array.isArray(raw.cards) ? raw.cards.length : 0,
-    readExistingCount(),
+    existing.count,
     { allowShrink: allowShrinkFromEnv() }
   );
   if (!gate.ok) {
@@ -244,14 +254,31 @@ function main() {
     };
   });
 
+  // Backstop for a missing/incomplete cf-vanguard-raw.json (which
+  // scrape-cf-vanguard.js already refuses to write): listings that had an
+  // official English name last build and are still listed must keep it,
+  // or visitors get a day of romaji in place of real names.
+  let officialBefore = 0;
+  let officialKept = 0;
+  for (const card of cards) {
+    if (!existing.officialIds.has(card.id)) continue;
+    officialBefore++;
+    if (card.translationSource === 'official') officialKept++;
+  }
+  const retention = checkOfficialRetention(officialKept, officialBefore, { allowShrink: allowOfficialShrinkFromEnv() });
+  if (!retention.ok) {
+    console.error(`[build-data] ${retention.message} ${OUT_PATH} was left unchanged.`);
+    process.exit(1);
+  }
+  if (retention.message) console.warn(`[build-data] ${retention.message}`);
+
   const payload = {
     generatedAt: new Date().toISOString(),
     count: cards.length,
     cards,
   };
 
-  fs.mkdirSync(path.dirname(OUT_PATH), { recursive: true });
-  fs.writeFileSync(OUT_PATH, JSON.stringify(payload), 'utf8');
+  writeFileAtomic(OUT_PATH, JSON.stringify(payload));
 
   console.log(`Wrote ${cards.length} cards to ${OUT_PATH}`);
   console.log('translationSource breakdown:', sourceCounts);

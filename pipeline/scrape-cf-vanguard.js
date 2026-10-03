@@ -44,6 +44,14 @@
  * small SD/TD sets) this finishes in a few hundred requests, comfortably
  * under the ceiling, in a few minutes at a 400ms delay between requests.
  *
+ * Completeness: a set whose pages didn't all load, or that parsed fewer
+ * cards than the site reported, or a family cut short by a failed probe,
+ * makes the run incomplete -- and an incomplete run (or one >2% smaller
+ * than the last) keeps the previous data/cf-vanguard-raw.json instead of
+ * overwriting it (reference-gate.js; ALLOW_OFFICIAL_SHRINK=1 overrides).
+ * It still exits 0 then, so the scheduled refresh carries on with the last
+ * good reference data.
+ *
  * Usage:
  *   node scrape-cf-vanguard.js
  */
@@ -52,6 +60,8 @@ const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
 const { createCookieJar, browserGet } = require('./http-client');
+const { checkReferenceScrape, allowOfficialShrinkFromEnv } = require('./reference-gate');
+const { writeFileAtomic } = require('./fs-atomic');
 
 const BASE = 'https://en.cf-vanguard.com';
 const SEARCH_URL = `${BASE}/cardlist/cardsearch/`;
@@ -82,6 +92,8 @@ const OUTPUT_PATH = path.join(__dirname, 'data', 'cf-vanguard-raw.json');
 
 let requestsMade = 0;
 const jar = createCookieJar();
+// Why this run is incomplete, if it is -- fed to checkReferenceScrape.
+const problems = [];
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -245,6 +257,7 @@ async function discoverAndScrapeFamily(family) {
   for (let n = 1; n <= maxProbe; n++) {
     if (requestsMade >= MAX_TOTAL_REQUESTS) {
       console.warn(`[warn] Hit MAX_TOTAL_REQUESTS (${MAX_TOTAL_REQUESTS}). Stopping family ${prefix} early.`);
+      problems.push(`request ceiling hit at ${prefix}`);
       break;
     }
     const setNo = String(n).padStart(pad, '0');
@@ -265,6 +278,7 @@ async function discoverAndScrapeFamily(family) {
 
     if (totalResults === null) {
       console.warn(`[${prefix}] ${keyword}: fetch failed again — stopping family ${prefix} here (data may be incomplete).`);
+      problems.push(`${keyword} failed to load, so family ${prefix} was cut short`);
       break;
     }
 
@@ -274,6 +288,10 @@ async function discoverAndScrapeFamily(family) {
     }
 
     console.log(`[${prefix}] ${keyword}: ${totalResults} results, ${cards.length} cards parsed, ${pages} page(s) fetched.`);
+    // Every complete set in refresh.log parses exactly as many cards as the
+    // site reports, so a shortfall means a page failed (or the ceiling cut
+    // the set short) -- not a counting quirk.
+    if (cards.length < totalResults) problems.push(`${keyword}: ${cards.length} of ${totalResults} cards`);
     setResults.push({ setKeyword: keyword, totalResults, cardCount: cards.length, cards });
   }
 
@@ -298,6 +316,7 @@ async function main() {
   for (const family of FAMILIES) {
     if (requestsMade >= MAX_TOTAL_REQUESTS) {
       console.warn(`[warn] Request ceiling reached before starting family ${family.prefix}. Skipping remaining families.`);
+      problems.push(`request ceiling hit before family ${family.prefix}`);
       break;
     }
     const sets = await discoverAndScrapeFamily(family);
@@ -327,14 +346,32 @@ async function main() {
     cards: allCards,
   };
 
-  fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
-  fs.writeFileSync(OUTPUT_PATH, JSON.stringify(output, null, 2), 'utf8');
-
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
-  console.log(
-    `Done. ${requestsMade} HTTP requests, ${allCards.length} unique cards, in ${elapsedSec}s. Wrote ${OUTPUT_PATH}`
-  );
+  console.log(`Done. ${requestsMade} HTTP requests, ${allCards.length} unique cards, in ${elapsedSec}s.`);
   console.table(familySummaries);
+
+  const gate = checkReferenceScrape(
+    { count: allCards.length, previousCount: readPreviousCount(), problems },
+    { allowShrink: allowOfficialShrinkFromEnv() }
+  );
+  if (!gate.ok) {
+    console.warn(`[warn] ${gate.message}`);
+    return;
+  }
+  if (gate.message) console.warn(`[warn] ${gate.message}`);
+  writeFileAtomic(OUTPUT_PATH, JSON.stringify(output, null, 2));
+  console.log(`Wrote ${OUTPUT_PATH}`);
+}
+
+// The card count of the cf-vanguard-raw.json this run would replace, or
+// null if there isn't a readable one.
+function readPreviousCount() {
+  try {
+    const previous = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf8'));
+    return Array.isArray(previous.cards) ? previous.cards.length : null;
+  } catch {
+    return null;
+  }
 }
 
 main().catch((err) => {
