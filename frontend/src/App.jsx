@@ -113,6 +113,9 @@ function App() {
   const [status, setStatus] = useState('loading') // 'loading' | 'ready' | 'error'
   const [errorMessage, setErrorMessage] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  // Why the last "Refresh now" failed, shown next to the button; the
+  // already-loaded catalog stays up either way.
+  const [refreshError, setRefreshError] = useState('')
   const [query, setQuery] = useState('')
   const [setSlug, setSetSlug] = useState('') // '' = All Sets
   const [rarity, setRarity] = useState('') // '' = All Rarities
@@ -183,9 +186,12 @@ function App() {
   }, [])
 
   // Manual "get the latest data now" escape hatch — bypasses the daily
-  // cache instead of waiting for it to expire on its own.
+  // cache instead of waiting for it to expire on its own. A failure only
+  // shows a note: the catalog already on screen (and in the cache) is
+  // still good, so it stays.
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true)
+    setRefreshError('')
     refreshCatalog()
       .then((data) => {
         setCards(data.cards)
@@ -196,10 +202,7 @@ function App() {
         setSelectedCard((prev) => (prev ? data.cards.find((card) => card.id === prev.id) || prev : prev))
         setDataVersion((v) => v + 1)
       })
-      .catch((err) => {
-        setErrorMessage(err.message)
-        setStatus('error')
-      })
+      .catch((err) => setRefreshError(err.message))
       .finally(() => setIsRefreshing(false))
   }, [])
 
@@ -400,6 +403,11 @@ function App() {
                 >
                   {isRefreshing ? 'Refreshing…' : 'Refresh now'}
                 </button>
+                {refreshError && (
+                  <p role="alert" className="mt-1 text-red-600 dark:text-red-400">
+                    Refresh failed — still showing the catalog you had. ({refreshError})
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -479,6 +487,7 @@ function App() {
         catalogGeneratedAt={meta?.generatedAt}
         onRefresh={handleRefresh}
         isRefreshing={isRefreshing}
+        refreshError={refreshError}
         dataVersion={dataVersion}
       />
     </div>

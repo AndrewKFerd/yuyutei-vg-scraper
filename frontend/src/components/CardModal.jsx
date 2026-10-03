@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import RarityBadge from './RarityBadge'
 import DeltaChip from './DeltaChip'
 import PriceHistoryChart from './PriceHistoryChart'
@@ -17,11 +17,17 @@ import {
 } from '../history'
 import { imageUrl2x, imageUrlHd } from '../images'
 import { stockInfo } from '../stock'
+import { useDialogFocus } from '../useDialogFocus'
 
-// Full-screen view of the 500x700 scan. Tap/click anywhere or press Escape
-// to dismiss. Sits above the card modal (z-60 vs 50) and stops propagation
-// so closing it doesn't also close the modal beneath.
+// Full-screen view of the 500x700 scan. Tap/click anywhere, press Escape or
+// activate the close button to dismiss. Sits above the card modal (z-60 vs
+// 50) and stops propagation so closing it doesn't also close the modal
+// beneath. Owns keyboard focus while open; closing returns it to the
+// "enlarge" button.
 function Lightbox({ src, alt, onClose }) {
+  const ref = useRef(null)
+  useDialogFocus(ref, { open: true })
+
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') {
@@ -36,16 +42,23 @@ function Lightbox({ src, alt, onClose }) {
 
   return (
     <div
-      role="presentation"
+      ref={ref}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${alt} — full-size image`}
+      tabIndex={-1}
       onMouseDown={(e) => {
         e.stopPropagation()
         onClose()
       }}
-      className="fixed inset-0 z-[60] flex cursor-zoom-out items-center justify-center bg-night-950/90 p-3"
+      className="fixed inset-0 z-[60] flex cursor-zoom-out items-center justify-center bg-night-950/90 p-3 outline-none"
     >
       <img src={src} alt={alt} className="max-h-full max-w-full rounded-md object-contain shadow-2xl" />
+      {/* Pointer users already closed it on mousedown above; onClick is
+          for keyboard activation (Enter/Space fire click, not mousedown). */}
       <button
         type="button"
+        onClick={onClose}
         aria-label="Close full-size image"
         className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full bg-night-800/80 text-gold-500 hover:bg-night-700"
       >
@@ -109,7 +122,7 @@ function SkillText({ card }) {
 
 // Shown when history recorded a change after the visitor's cached catalog
 // was built, so the footer's price/stock (from that catalog) is out of date.
-function StaleCatalogNote({ latest, catalogMinute, currency, rates, onRefresh, isRefreshing }) {
+function StaleCatalogNote({ latest, catalogMinute, currency, rates, onRefresh, isRefreshing, refreshError }) {
   const [at, price, stock] = latest
   return (
     <div className="rounded-md border border-gold-300 bg-gold-50 px-3 py-2 text-xs leading-relaxed text-slate-700 dark:border-gold-700/50 dark:bg-night-700 dark:text-gold-500">
@@ -126,6 +139,11 @@ function StaleCatalogNote({ latest, catalogMinute, currency, rates, onRefresh, i
           {isRefreshing ? 'Refreshing…' : 'Refresh now'}
         </button>
       )}
+      {onRefresh && refreshError && (
+        <span role="alert" className="mt-1 block text-red-600 dark:text-red-400">
+          Refresh failed ({refreshError}).
+        </span>
+      )}
     </div>
   )
 }
@@ -133,7 +151,16 @@ function StaleCatalogNote({ latest, catalogMinute, currency, rates, onRefresh, i
 // "Price history" block. `history` is undefined while loading, null when
 // the history file isn't available (then the section just doesn't show --
 // history is an extra, never an error state), else history-public.json.
-function PriceHistorySection({ card, history, currency, rates, catalogGeneratedAt, onRefresh, isRefreshing }) {
+function PriceHistorySection({
+  card,
+  history,
+  currency,
+  rates,
+  catalogGeneratedAt,
+  onRefresh,
+  isRefreshing,
+  refreshError,
+}) {
   if (history === undefined) {
     return <p className="animate-pulse text-xs text-slate-400 dark:text-gold-500/50">Loading price history…</p>
   }
@@ -180,6 +207,7 @@ function PriceHistorySection({ card, history, currency, rates, catalogGeneratedA
           rates={rates}
           onRefresh={onRefresh}
           isRefreshing={isRefreshing}
+          refreshError={refreshError}
         />
       )}
       {chartable ? (
@@ -228,12 +256,27 @@ function PriceHistorySection({ card, history, currency, rates, catalogGeneratedA
   )
 }
 
-// `catalogGeneratedAt` / `onRefresh` / `isRefreshing` drive the "newer data
-// than your cached catalog" note; `dataVersion` changes after a catalog
-// refresh (which also drops the history cache) so history reloads.
-function CardModal({ card, currency, rates, onClose, catalogGeneratedAt, onRefresh, isRefreshing, dataVersion }) {
+// `catalogGeneratedAt` / `onRefresh` / `isRefreshing` / `refreshError` drive
+// the "newer data than your cached catalog" note; `dataVersion` changes
+// after a catalog refresh (which also drops the history cache) so history
+// reloads.
+function CardModal({
+  card,
+  currency,
+  rates,
+  onClose,
+  catalogGeneratedAt,
+  onRefresh,
+  isRefreshing,
+  refreshError,
+  dataVersion,
+}) {
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const closeLightbox = useCallback(() => setLightboxOpen(false), [])
+  // Focus moves into the dialog on open and back to the tile on close; Tab
+  // stays inside it -- except while the lightbox (its own trap) is open.
+  const dialogRef = useRef(null)
+  useDialogFocus(dialogRef, { open: Boolean(card), trap: Boolean(card) && !lightboxOpen })
   // Which scan the modal thumbnail is showing: start with the 500x700
   // "front" scan; if the CDN doesn't have one for this card, fall back to
   // the 2x thumbnail rather than a broken image.
@@ -307,10 +350,12 @@ function CardModal({ card, currency, rates, onClose, catalogGeneratedAt, onRefre
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 dark:bg-night-950/75"
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={card.nameEn || card.nameJp}
-        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl dark:bg-night-800"
+        tabIndex={-1}
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl outline-none dark:bg-night-800"
       >
         {/* Scrollable content -- everything EXCEPT price/stock/the outbound
             link, which live in the sticky footer below instead. Card art
@@ -438,6 +483,7 @@ function CardModal({ card, currency, rates, onClose, catalogGeneratedAt, onRefre
               catalogGeneratedAt={catalogGeneratedAt}
               onRefresh={onRefresh}
               isRefreshing={isRefreshing}
+              refreshError={refreshError}
             />
           </div>
         </div>

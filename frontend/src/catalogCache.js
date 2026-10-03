@@ -108,12 +108,14 @@ async function fetchAndCache(url, validate, nullOn404) {
  * passes `validate`), with `fromCache` saying which happened. Network data
  * that fails `validate` is still returned, just never cached — the caller
  * decides what an invalid payload means. With `nullOn404`, an HTTP 404
- * resolves `data: null` (not cached). Only a genuine network/HTTP failure
- * on the fallback fetch ever rejects; every cache-related failure degrades
- * silently to a normal fetch instead.
+ * resolves `data: null` (not cached). With `force`, the cache isn't read at
+ * all -- the network copy replaces it only once it has arrived and
+ * validated, so a failed forced fetch leaves the cached copy intact. Only a
+ * genuine network/HTTP failure on the fetch ever rejects; every
+ * cache-related failure degrades silently to a normal fetch instead.
  */
-export async function getCachedJson(url, { ttlMs, validate = () => true, nullOn404 = false }) {
-  const cached = await readFromCache(url, ttlMs, validate)
+export async function getCachedJson(url, { ttlMs, validate = () => true, nullOn404 = false, force = false }) {
+  const cached = force ? null : await readFromCache(url, ttlMs, validate)
   if (cached) return { data: cached, fromCache: true }
   return { data: await fetchAndCache(url, validate, nullOn404), fromCache: false }
 }
@@ -138,14 +140,10 @@ function isValidCatalog(data) {
 }
 
 /**
- * The catalog, via the same-day cache. Resolves to `{ data, fromCache }`;
- * rejects only on a network/HTTP failure (see getCachedJson).
+ * The catalog, via the same-day cache (bypassed for reading with `force`).
+ * Resolves to `{ data, fromCache }`; rejects only on a network/HTTP failure
+ * (see getCachedJson).
  */
-export function getCachedCatalog() {
-  return getCachedJson(CATALOG_URL, { ttlMs: CATALOG_TTL_MS, validate: isValidCatalog })
-}
-
-/** Drops the cached catalog and its timestamp, so the next load re-fetches. */
-export function clearCatalogCache() {
-  return clearCachedJson(CATALOG_URL)
+export function getCachedCatalog({ force = false } = {}) {
+  return getCachedJson(CATALOG_URL, { ttlMs: CATALOG_TTL_MS, validate: isValidCatalog, force })
 }
