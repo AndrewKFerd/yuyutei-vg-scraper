@@ -39,12 +39,20 @@ function getBucket() {
 
 // Deadlines for the S3 calls. The SDK's defaults are "wait forever", so a
 // connection that dies silently (sleep, dropped Wi-Fi) would hang the run
-// like the cf-vanguard one did. requestTimeout is a socket *idle* timeout
-// (no bytes moving for that long), not a cap on the whole transfer, so the
-// ~30 MB cards.json upload is fine on any link that is actually making
-// progress; connectionTimeout covers establishing the TCP/TLS connection.
+// like the cf-vanguard one did. With @smithy/node-http-handler:
+//  - connectionTimeout: establishing the TCP/TLS connection.
+//  - socketTimeout: the socket sitting idle (no bytes either way) -- this is
+//    the one that catches a dead link, and it never cuts a transfer that is
+//    making progress, so the ~30 MB cards.json upload is fine.
+//  - requestTimeout: a wall-clock cap on the whole request. By default it
+//    only logs a warning; throwOnRequestTimeout makes it an error. Sized at
+//    15 min so a 30 MB upload would still finish at ~35 KB/s.
+// The handler's timers stop once response headers arrive, so reads of a
+// response body pass an AbortSignal instead (see getObjectBuffer).
 const S3_CONNECTION_TIMEOUT_MS = 15 * 1000;
-const S3_REQUEST_TIMEOUT_MS = 120 * 1000;
+const S3_SOCKET_TIMEOUT_MS = 120 * 1000;
+const S3_REQUEST_TIMEOUT_MS = 15 * 60 * 1000;
+const S3_DOWNLOAD_TIMEOUT_MS = 2 * 60 * 1000;
 
 let client = null;
 
@@ -56,6 +64,12 @@ function getClient() {
       // Supabase's S3-compatible endpoint needs path-style addressing
       // (endpoint/bucket/key), not virtual-hosted-style (bucket.endpoint/key).
       forcePathStyle: true,
+      requestHandler: new NodeHttpHandler({
+        connectionTimeout: S3_CONNECTION_TIMEOUT_MS,
+        socketTimeout: S3_SOCKET_TIMEOUT_MS,
+        requestTimeout: S3_REQUEST_TIMEOUT_MS,
+        throwOnRequestTimeout: true,
+      }),
       credentials: {
         accessKeyId: requireEnv('SUPABASE_S3_ACCESS_KEY_ID'),
         secretAccessKey: requireEnv('SUPABASE_S3_SECRET_ACCESS_KEY'),
@@ -96,7 +110,9 @@ function isMissingHead(err) {
 async function getObjectBuffer(key) {
   const bucket = getBucket();
   try {
-    const res = await getClient().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const res = await getClient().send(new GetObjectCommand({ Bucket: bucket, Key: key }), {
+      abortSignal: AbortSignal.timeout(S3_DOWNLOAD_TIMEOUT_MS),
+    });
     return Buffer.from(await res.Body.transformToByteArray());
   } catch (err) {
     if (isMissingObject(err)) return null;
@@ -117,6 +133,9 @@ async function headObjectSize(key) {
 }
 
 module.exports = {
+  S3_CONNECTION_TIMEOUT_MS,
+  S3_SOCKET_TIMEOUT_MS,
+  S3_REQUEST_TIMEOUT_MS,
   ENV_VARS,
   hasS3Env,
   getBucket,
