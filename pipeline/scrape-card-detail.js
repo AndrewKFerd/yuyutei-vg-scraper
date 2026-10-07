@@ -47,6 +47,17 @@
  *   node scrape-card-detail.js --limit 20             # smoke test
  *   node scrape-card-detail.js --sets dzss19,dzbt16   # only these setSlugs
  *   node scrape-card-detail.js --force                # refetch cards that already have text
+ *   node scrape-card-detail.js --missing              # only cards a fetch could fill in (see below)
+ *
+ * ## Cards with no text
+ *
+ * A plain run already skips cards that have effect text and retries the rest,
+ * but "the rest" is mostly cards whose yuyu-tei page is complete and simply
+ * has no 効果 (gift markers, tokens, vanilla units) -- thousands of requests
+ * that can only come back "-" again. --missing skips those (classifyEntry),
+ * and cards the last build already gave English text, so it queues just the
+ * never-fetched cards and the ones fetched while the page was still blank.
+ * It combines with --sets and --limit.
  */
 
 const fs = require('fs');
@@ -73,6 +84,7 @@ const CHECKPOINT_EVERY = 300;
 
 const CATALOG_PATH = path.join(__dirname, 'data', 'catalog-raw.json');
 const OUTPUT_PATH = path.join(__dirname, 'data', 'card-details-raw.json');
+const BUILT_PATH = path.join(__dirname, 'data', 'cards.json'); // last build-data.js output, read only by --missing
 
 // Japanese <th> label -> output field. Anything not listed is ignored.
 const STAT_LABELS = {
@@ -103,7 +115,32 @@ function parseArgs() {
   const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
   const setsIdx = args.indexOf('--sets');
   const sets = setsIdx !== -1 ? args[setsIdx + 1].split(',').map((s) => s.trim().toLowerCase()) : null;
-  return { limit, sets, force: args.includes('--force') };
+  return { limit, sets, force: args.includes('--force'), missing: args.includes('--missing') };
+}
+
+/**
+ * What a checkpoint entry says about whether fetching its card again could
+ * help (used by --missing):
+ *   'done'   it has effect text
+ *   'absent' no entry at all -- never fetched
+ *   'blank'  yuyu-tei hadn't filled the page in when it was fetched (a unit
+ *            with no power, or an order with no text) -- worth retrying
+ *   'none'   a filled page that has no 効果 on purpose: a gift marker /
+ *            token / other non-card (Gift Markers and "その他" carry no
+ *            rules text), or a unit with a power but no text (a vanilla
+ *            unit). Refetching only gets "-" again.
+ * Not exact: some pages are half-filled (a unit with grade and nation but no
+ * power or text, e.g. the whole of DZ-TB03 and VSS09 when this was written),
+ * which reads as 'blank' and keeps being retried until yuyu-tei fills them in
+ * -- cheap, since --missing never touches the thousands of 'none' ones.
+ */
+function classifyEntry(entry) {
+  if (!entry) return 'absent';
+  if (entry.effect) return 'done';
+  const kind = entry.kind || '';
+  if (kind.includes('マーカー') || kind === 'その他') return 'none';
+  if (kind.includes('ユニット') && entry.power != null) return 'none';
+  return 'blank';
 }
 
 function clean(s) {
@@ -220,6 +257,27 @@ function loadCheckpoint() {
   }
 }
 
+/**
+ * Group keys whose listings already have English skill text in the last
+ * build (data/cards.json). Without a readable cards.json nothing counts as
+ * covered, so --missing still works, just fetching a bit more.
+ */
+function loadEnglishCoveredGroups(listings) {
+  const covered = new Set();
+  let built;
+  try {
+    built = JSON.parse(fs.readFileSync(BUILT_PATH, 'utf8')).cards;
+  } catch (err) {
+    console.warn(`[warn] No usable ${BUILT_PATH} (${err.message}); --missing won't skip cards that already have English text.`);
+    return covered;
+  }
+  const withEnglish = new Set(built.filter((c) => c.skillTextEn).map((c) => c.id));
+  for (const c of listings) {
+    if (withEnglish.has(`${c.setSlug}/${c.id}`)) covered.add(groupKey(c));
+  }
+  return covered;
+}
+
 function writeOutput(skills) {
   writeFileAtomic(
     OUTPUT_PATH,
@@ -228,7 +286,7 @@ function writeOutput(skills) {
 }
 
 async function main() {
-  const { limit, sets, force } = parseArgs();
+  const { limit, sets, force, missing } = parseArgs();
 
   let catalog;
   try {
@@ -264,9 +322,18 @@ async function main() {
     const cur = reps.get(k);
     if (!cur || (!isPlainPrinting(cur) && isPlainPrinting(c))) reps.set(k, c);
   }
+  // --missing narrows the queue to cards a fetch could actually fill in:
+  // never fetched, or fetched while yuyu-tei's page was still blank (see
+  // classifyEntry) -- skipping the filled pages that have no text on purpose
+  // (markers, tokens, vanilla units) and the cards that already have English
+  // text in the last build (the Japanese text is only their fallback).
+  const englishCovered = missing ? loadEnglishCoveredGroups(scopedListings) : new Set();
   let queue = Array.from(reps.values()).filter((c) => {
-    if (force) return true;
     const prev = skills[groupKey(c)];
+    if (missing) {
+      return ['absent', 'blank'].includes(classifyEntry(prev)) && !englishCovered.has(groupKey(c));
+    }
+    if (force) return true;
     return !(prev && prev.effect);
   });
   if (limit) queue = queue.slice(0, limit);
@@ -334,7 +401,11 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('Fatal error during card-detail scrape:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Fatal error during card-detail scrape:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { classifyEntry, extractDetail };
