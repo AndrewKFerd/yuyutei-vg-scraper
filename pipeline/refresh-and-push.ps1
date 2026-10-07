@@ -25,9 +25,13 @@
 #     missing it restores it from the bucket, and it refuses to start a
 #     fresh one otherwise (see its header; ALLOW_CATALOG_SHRINK=1,
 #     ALLOW_MASS_CHANGE=1 and HISTORY_INIT=1 are the manual overrides).
-#  3. scrape-cf-vanguard.js -> data/cf-vanguard-raw.json -- but only if the
-#     scrape is complete and not >2% smaller than the last one; otherwise it
-#     keeps the previous file and exits 0, so the run carries on with the
+#  3. scrape-cf-vanguard.js -> data/cf-vanguard-raw.json -- at most about
+#     once a day: skipped when the file was written < 20 h ago (official
+#     names change weekly at most, and the scrape is ~9 of a run's ~12 min).
+#     FORCE_CF_VANGUARD=1 forces it. When it does run, the file is only
+#     replaced if the scrape is complete and not >2% smaller than the last
+#     one; otherwise it keeps the previous file (and so its old mtime, which
+#     makes the next run retry) and exits 0, so the run carries on with the
 #     last good official names (reference-gate.js)
 #  4. build-data.js      -> data/cards.json (applies the same size gate
 #     against the cards.json it would replace, refuses to drop >2% of the
@@ -86,6 +90,10 @@ $staleLockMinutes = 25
 # to refresh.old.log (replacing the previous one), so at most ~2x this is
 # kept. Both names match .gitignore's *.log.
 $maxLogBytes = 5MB
+# cf-vanguard-raw.json older than this is re-scraped (see the step below).
+# 20 h rather than 24 so the scrape lands around the same time each day
+# despite run-to-run jitter, instead of drifting later and later.
+$cfVanguardMaxAgeHours = 20
 $oldLogFile = Join-Path $pipelineDir 'refresh.old.log'
 
 function Log($msg) {
@@ -167,7 +175,25 @@ try {
 
     Invoke-Native 'Starting refresh: scrape-catalog.js' 'node' @('scrape-catalog.js') | Out-Null
     Invoke-Native 'Recording price history: record-history.js' 'node' @('--env-file=.env', 'record-history.js') | Out-Null
-    Invoke-Native 'Starting refresh: scrape-cf-vanguard.js' 'node' @('scrape-cf-vanguard.js') | Out-Null
+    # The cf-vanguard scrape is ~316 requests and ~9 of a run's ~12 minutes,
+    # for official English names that change at most weekly, so it runs at
+    # most about once a day: skipped while cf-vanguard-raw.json is younger
+    # than $cfVanguardMaxAgeHours. The file's mtime only advances when a
+    # scrape is accepted (an incomplete/shrunken one keeps the previous file
+    # and its old mtime, see reference-gate.js), so a failed scrape retries on
+    # the very next run instead of waiting another day.
+    $cfRaw = Join-Path $pipelineDir 'data\cf-vanguard-raw.json'
+    $cfAgeHours = $null
+    if ([System.IO.File]::Exists($cfRaw)) {
+        $cfAgeHours = ((Get-Date) - [System.IO.File]::GetLastWriteTime($cfRaw)).TotalHours
+    }
+    if ($env:FORCE_CF_VANGUARD -eq '1') {
+        Invoke-Native 'Starting refresh: scrape-cf-vanguard.js (forced by FORCE_CF_VANGUARD=1)' 'node' @('scrape-cf-vanguard.js') | Out-Null
+    } elseif ($null -ne $cfAgeHours -and $cfAgeHours -lt $cfVanguardMaxAgeHours) {
+        Log "Skipping scrape-cf-vanguard.js: cf-vanguard-raw.json is $([math]::Round($cfAgeHours, 1)) h old (re-scraped after $cfVanguardMaxAgeHours h; FORCE_CF_VANGUARD=1 forces it)."
+    } else {
+        Invoke-Native 'Starting refresh: scrape-cf-vanguard.js' 'node' @('scrape-cf-vanguard.js') | Out-Null
+    }
     Invoke-Native 'Building pipeline/data/cards.json' 'node' @('build-data.js') | Out-Null
     Invoke-Native 'Uploading price history, movers and cards.json to Supabase Storage' 'node' @('--env-file=.env', 'upload-cards.js') | Out-Null
 
