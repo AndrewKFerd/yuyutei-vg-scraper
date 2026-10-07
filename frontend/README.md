@@ -30,6 +30,6 @@ Local dev needs data from one of:
 
   (PowerShell: `$env:LOCAL_DATA_DIR='../pipeline/data'; npm run dev`.) A missing file returns the same 404 as production.
 
-URL state is shareable: `?card=dzbt14/10318` opens that card, `?view=movers&w=30d` opens Market Movers on the 30-day window.
+URL state is shareable: `?card=dzbt14/10318` opens that card, `?view=movers&w=30d&nation=KS` opens Market Movers on the 30-day window, filtered to Keter Sanctuary.
 
 See the repo root `README.md` for the full data pipeline / architecture.
