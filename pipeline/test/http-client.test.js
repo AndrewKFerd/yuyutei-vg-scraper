@@ -29,6 +29,30 @@ test('fetchWithTimeout rejects with a clear, retryable Error when the server nev
   }
 });
 
+test('fetchWithTimeout gives a stall after the headers the same clear message', async () => {
+  // Sends the status line, headers and the start of the body, then goes silent.
+  const server = await listen((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Length': '100' });
+    res.write('partial');
+  });
+  try {
+    const res = await fetchWithTimeout(`http://127.0.0.1:${server.address().port}/`, {}, 150);
+    assert.equal(res.status, 200); // headers arrived in time
+    await assert.rejects(res.text(), (err) => {
+      assert.equal(err.name, 'Error');
+      assert.match(err.message, /timed out after 150ms/);
+      return true;
+    });
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test('fetchWithTimeout defaults to a 60 s deadline', () => {
+  assert.equal(require('../http-client').REQUEST_TIMEOUT_MS, 60000);
+});
+
 test('fetchWithTimeout passes a prompt response through untouched', async () => {
   const server = await listen((req, res) => res.end('ok'));
   try {

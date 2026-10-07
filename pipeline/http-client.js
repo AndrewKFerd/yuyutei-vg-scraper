@@ -31,19 +31,47 @@ const USER_AGENT =
 // (the signal stays attached to the response stream), so a stalled body
 // aborts too. It surfaces as an ordinary Error, which every scraper's retry
 // loop already treats as a retryable failure.
-const REQUEST_TIMEOUT_MS = 30 * 1000;
+const REQUEST_TIMEOUT_MS = 60 * 1000;
 
-/** fetch() with a deadline; a timeout rejects with a clear "timed out after Ns" Error. */
-async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
-  try {
-    return await fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
-  } catch (err) {
-    if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
-      throw new Error(`request timed out after ${Math.round(timeoutMs / 1000)}s`, { cause: err });
-    }
-    throw err;
-  }
+function describeDuration(ms) {
+  return ms < 1000 ? `${ms}ms` : `${Math.round(ms / 1000)}s`;
 }
+
+/** The same clear Error whether the deadline hit before the headers or during the body. */
+function normalizeFetchError(err, timeoutMs) {
+  if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+    return new Error(`request timed out after ${describeDuration(timeoutMs)}`, { cause: err });
+  }
+  return err;
+}
+
+/**
+ * fetch() with a deadline. A timeout rejects with a clear "request timed out
+ * after Ns" Error -- including a stall AFTER the headers arrived: the body
+ * readers (text/json/arrayBuffer/blob) are wrapped so their abort (a raw
+ * DOMException "The operation was aborted due to timeout") gets the same
+ * message instead of an opaque one in the log.
+ */
+async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+  let res;
+  try {
+    res = await fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (err) {
+    throw normalizeFetchError(err, timeoutMs);
+  }
+  for (const reader of ['text', 'json', 'arrayBuffer', 'blob']) {
+    const original = res[reader].bind(res);
+    res[reader] = async () => {
+      try {
+        return await original();
+      } catch (err) {
+        throw normalizeFetchError(err, timeoutMs);
+      }
+    };
+  }
+  return res;
+}
+
 
 /** A tiny cookie jar: absorbs Set-Cookie from responses, replays them on later requests. */
 function createCookieJar() {

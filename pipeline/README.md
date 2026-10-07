@@ -39,7 +39,7 @@ the ones that touch the bucket need `node --env-file=.env <script>`.
 
 ## Modules
 
-`http-client.js` (browser-like headers, cookie jar, 30 s request timeout),
+`http-client.js` (browser-like headers, cookie jar, 60 s request timeout),
 `s3.js` (bucket client with timeouts), `fs-atomic.js` (crash-safe writes),
 `catalog-gate.js` / `reference-gate.js` (the size/loss gates),
 `price-history.js` (history format, `chg7d`, movers), `catalog-split.js` (the
