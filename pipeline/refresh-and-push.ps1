@@ -75,9 +75,12 @@ $lockFile = Join-Path $pipelineDir 'refresh.lock'
 # periods on rate-limit backoff, and two concurrent runs would both write
 # and upload cards.json (and race on price-history.json, the one file here
 # that can't be regenerated), so this guards against that rather than relying on
-# timing alone. A lock older than 25 min is assumed to be from a
+# timing alone. A lock whose owning process is gone is assumed to be from a
 # crashed run (this script always removes its own lock, success or failure)
-# and is taken over rather than left to block every future run forever.
+# and is taken over rather than left to block every future run forever; see
+# the lock handling below for how an owner that is still alive is detected.
+# Only a lock in the old timestamp-only format is judged by age, using this
+# many minutes.
 $staleLockMinutes = 25
 # refresh.log grows ~1 MB a week at 48 runs/day; past this size it's moved
 # to refresh.old.log (replacing the previous one), so at most ~2x this is
@@ -109,15 +112,43 @@ function Invoke-Native($label, $exe, $exeArgs) {
     return $output
 }
 
+# The lock records who holds it: "pid=<n> start=<process start, UTC, to the
+# second> time=<when written>". The PID alone isn't enough (Windows reuses
+# them), so the process start time is checked too. A lock whose owner is
+# still running is honoured however old it is -- a run that slept mid-scrape
+# and woke up is alive and will carry on, so taking its lock over would put
+# two runs on price-history.json. Only a lock whose owner is gone is stale.
+# A lock in the old format (just a timestamp) has no owner to check and falls
+# back to the age rule.
+function Get-ProcessStamp($processId) {
+    try {
+        $p = [System.Diagnostics.Process]::GetProcessById([int]$processId)
+        return $p.StartTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss')
+    } catch {
+        return $null    # no such process (or not inspectable)
+    }
+}
+
 if (Test-Path -LiteralPath $lockFile) {
     $ageMinutes = ((Get-Date) - (Get-Item -LiteralPath $lockFile).LastWriteTime).TotalMinutes
-    if ($ageMinutes -lt $staleLockMinutes) {
-        Log "Another refresh appears to be in progress (lock is $([int]$ageMinutes) min old). Skipping this run."
+    $lockText = ''
+    try { $lockText = [System.IO.File]::ReadAllText($lockFile) } catch { }
+    if ($lockText -match 'pid=(\d+) start=(\S+)') {
+        $ownerStamp = Get-ProcessStamp $Matches[1]
+        if ($ownerStamp -and $ownerStamp -eq $Matches[2]) {
+            Log "Another refresh is still running (pid $($Matches[1]), lock is $([int]$ageMinutes) min old). Skipping this run."
+            exit 0
+        }
+        Log "Stale lock found (pid $($Matches[1]) is no longer running, lock is $([int]$ageMinutes) min old) -- taking over."
+    } elseif ($ageMinutes -lt $staleLockMinutes) {
+        Log "Another refresh appears to be in progress (old-format lock, $([int]$ageMinutes) min old). Skipping this run."
         exit 0
+    } else {
+        Log "Stale lock found ($([int]$ageMinutes) min old, old format, a previous run likely crashed) -- taking over."
     }
-    Log "Stale lock found ($([int]$ageMinutes) min old, a previous run likely crashed) -- taking over."
 }
-[System.IO.File]::WriteAllText($lockFile, (Get-Date).ToString('o'))
+$ownStamp = Get-ProcessStamp $PID
+[System.IO.File]::WriteAllText($lockFile, "pid=$PID start=$ownStamp time=$((Get-Date).ToString('o'))")
 
 # Rotated only once the lock is ours, so a run that's about to be skipped
 # can't move the log out from under one that's still writing to it. A
