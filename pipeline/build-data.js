@@ -6,8 +6,9 @@
  * written locally for upload-cards.js to push to Supabase Storage.
  *
  * For each card: prefer a confident official English name (cf-vanguard);
- * then, for D-/DZ- cards, a fan translation from the Cardfight!! Vanguard
- * wiki (scrape-fandom.js); otherwise fall back to the locally-built
+ * then a fan translation from the Cardfight!! Vanguard wiki
+ * (scrape-fandom.js; D-/DZ-, V-, G- and older cards, whichever series that
+ * scrape covered); otherwise fall back to the locally-built
  * translation engine.
  *
  * Besides the full cards.json it writes the split the new frontend loads:

@@ -1,18 +1,29 @@
 'use strict';
 
 /**
- * Scrapes fan-translated English names and card text for D-era (D-/DZ-)
- * cards from the Cardfight!! Vanguard Fandom wiki
- * (https://cardfight.fandom.com), for the many cards cf-vanguard.com has no
- * official English release of yet (whole current sets, promos, structure
- * decks...). Writes data/fandom-raw.json, which match-fandom.js indexes for
- * build-data.js.
+ * Scrapes fan-translated English names and card text for D-era (D-/DZ-),
+ * V-era (V-), G-era (G-) and older (unprefixed: BT, EB, TD, PR...) cards from
+ * the Cardfight!! Vanguard Fandom wiki (https://cardfight.fandom.com), for the
+ * many cards cf-vanguard.com has no official English release of yet (whole
+ * current sets, promos, structure decks, most of the V/G eras...). Writes
+ * data/fandom-raw.json, which match-fandom.js indexes for build-data.js.
+ *
+ * Options:
+ *   --series D,DZ,V,G,OLD   which series to keep (default: all). Series are
+ *                           read off the card-code prefix, see fandom-series.js.
+ *                           Without D/DZ the {{DTable}} listing isn't walked.
+ *   --limit <n>             stop after n listing batches (50 pages each) per
+ *                           template -- for trying a change out. Requires --out
+ *                           so a partial scrape can't replace the real file.
+ *   --out <path>            write here instead of data/fandom-raw.json
  *
  * Uses the MediaWiki API rather than scraping HTML: D-era card pages use
  * {{DTable}}, so a `generator=embeddedin` listing returns every card page's
- * wikitext, 50 at a time. Older-era cards reprinted in D-/DZ- sets (D-VS,
- * D-PV...) keep their original {{CardTable}} page, so that listing is walked
- * too, keeping only pages that list a D-/DZ- printing. Effect text leans on
+ * wikitext, 50 at a time. Every older era uses {{CardTable}} (as do older
+ * cards reprinted in D-/DZ- sets: D-VS, D-PV...), so that listing is walked
+ * too, keeping only pages that list a printing in a selected series -- the
+ * V/G/older cards are just a wider filter on pages the walk fetches anyway,
+ * so they add no listing requests. Effect text leans on
  * wiki templates ({{Once}}, {{Cost|...}}, {{FV|D}}, {{DivineSkill|...}});
  * rather than re-implementing them, each batch's effects are sent back
  * through `action=expandtemplates` in one request and the expanded wikitext
@@ -25,9 +36,10 @@
  * changes slowly, so run this by hand occasionally, then build-data.js.
  */
 
-const fs = require('fs');
 const path = require('path');
 const { fetchWithTimeout } = require('./http-client');
+const { writeFileAtomic } = require('./fs-atomic');
+const { ALL_SERIES, CARD_CODE_RE, FOREIGN_CODE_RE, seriesOfCode, parseSeries } = require('./fandom-series');
 
 const API_URL = 'https://cardfight.fandom.com/api.php';
 const OUTPUT_PATH = path.join(__dirname, 'data', 'fandom-raw.json');
@@ -36,13 +48,14 @@ const USER_AGENT = 'yuyutei-vg-scraper/1.0 (https://github.com/AndrewKFerd/yuyut
 const DELAY_MS = 500;
 const MAX_RETRIES = 3;
 const RETRY_BACKOFF_MS = 2000;
-const MAX_REQUESTS = 1200; // ~410 listing batches + expansions; headroom for retries
+const MAX_REQUESTS = 2000; // listing batches + one expansion per batch; headroom for retries
 const EXPAND_SEPARATOR = '\n@@CARD-SEPARATOR@@\n';
 
-// Card-page templates to walk, and whether every page using it is D-era.
+// Card-page templates to walk, and the series every page using it is known
+// to belong to (null: any -- decided per page from its printings).
 const TEMPLATES = [
-  { title: 'Template:DTable', allDEra: true },
-  { title: 'Template:CardTable', allDEra: false },
+  { title: 'Template:DTable', series: ['D', 'DZ'] },
+  { title: 'Template:CardTable', series: null },
 ];
 
 let requestsMade = 0;
@@ -99,17 +112,18 @@ function parseTemplateFields(wikitext) {
   return fields;
 }
 
-// "D-BT01/DSR02", "DZ-BT17/SEC01", "D-PR/756", "DZ-SS04e/012EN"...
-const CARD_CODE_RE = /\bDZ?-[A-Za-z]+\d*[A-Za-z]*\/[A-Za-z]*\d+[A-Za-z]*\b/g;
-// Codes of English/Thai printings -- yuyu-tei only sells Japanese ones.
-const FOREIGN_CODE_RE = /(EN|TH)(\/|$)/i;
-
-function extractCodes(fields) {
+/**
+ * The page's Japanese printing codes ("D-BT01/DSR02", "BT01/S02", "V-EB05/SSP01"...)
+ * within `series`. Foreign (EN/TH/KR) printings and codes of other series are left out,
+ * which also keeps the output from carrying codes nobody will match.
+ */
+function extractCodes(fields, series = ALL_SERIES) {
   const codes = new Set();
   for (const [key, value] of Object.entries(fields)) {
     if (!/^set\d+$/.test(key)) continue;
     for (const code of value.match(CARD_CODE_RE) || []) {
-      if (!FOREIGN_CODE_RE.test(code)) codes.add(code.toUpperCase());
+      if (FOREIGN_CODE_RE.test(code)) continue;
+      if (series.includes(seriesOfCode(code))) codes.add(code.toUpperCase());
     }
   }
   return Array.from(codes);
@@ -147,11 +161,18 @@ function toNumber(value) {
   return digits ? Number(digits) : null;
 }
 
-function pageToCard(page, allDEra) {
+/**
+ * @param page            a MediaWiki page with its wikitext
+ * @param series          the series being scraped
+ * @param templateSeries  the series every page of the template it was listed
+ *   under belongs to (D-era pages are kept even with no codes listed), or null
+ */
+function pageToCard(page, series, templateSeries = null) {
   const wikitext = page.revisions?.[0]?.slots?.main?.content || '';
   const fields = parseTemplateFields(wikitext);
-  const codes = extractCodes(fields);
-  if (!allDEra && !codes.some((code) => /^DZ?-/.test(code))) return null;
+  const codes = extractCodes(fields, series);
+  const wholeTemplateWanted = templateSeries !== null && templateSeries.some((s) => series.includes(s));
+  if (!wholeTemplateWanted && codes.length === 0) return null;
   // All-katakana names have no kanji field, only kana.
   const kanji = wikitextToPlain(fields.kanji || fields.jpname || fields.kana);
   if (codes.length === 0 && !kanji) return null;
@@ -213,13 +234,42 @@ async function expandEffects(cards) {
   }
 }
 
+/** Command line: --series D,DZ,V,G,OLD  --limit <batches>  --out <path> */
+function parseArgs(argv) {
+  const opts = { series: ALL_SERIES, limit: Infinity, out: OUTPUT_PATH };
+  for (let i = 0; i < argv.length; i++) {
+    const flag = argv[i];
+    const value = () => {
+      if (i + 1 >= argv.length) throw new Error(`${flag} needs a value`);
+      return argv[++i];
+    };
+    if (flag === '--series') opts.series = parseSeries(value());
+    else if (flag === '--limit') {
+      opts.limit = Number(value());
+      if (!Number.isInteger(opts.limit) || opts.limit < 1) throw new Error('--limit must be a positive integer');
+    } else if (flag === '--out') opts.out = path.resolve(value());
+    else throw new Error(`Unknown argument ${flag}`);
+  }
+  // A limited run is a sample: it must never replace the real data file, so
+  // --limit insists on somewhere else to write.
+  if (Number.isFinite(opts.limit) && opts.out === OUTPUT_PATH) {
+    throw new Error('--limit makes a partial scrape; pass --out <path> so it does not overwrite data/fandom-raw.json');
+  }
+  return opts;
+}
+
 async function main() {
+  const opts = parseArgs(process.argv.slice(2));
   const startedAt = Date.now();
   const byTitle = new Map();
-  let batch = 0;
+  const sample = Number.isFinite(opts.limit) ? ` (sample: ${opts.limit} batch(es) per template)` : '';
+  console.log(`Series: ${opts.series.join(', ')}${sample}`);
 
-  for (const { title, allDEra } of TEMPLATES) {
+  for (const { title, series: templateSeries } of TEMPLATES) {
+    // No point listing the whole {{DTable}} when no D-era series was asked for.
+    if (templateSeries && !templateSeries.some((s) => opts.series.includes(s))) continue;
     let cont = {};
+    let batch = 0;
     for (;;) {
       batch++;
       const json = await apiRequest({
@@ -236,13 +286,13 @@ async function main() {
       // A page using both templates is only kept once.
       const batchCards = (json.query?.pages || [])
         .filter((page) => !byTitle.has(page.title))
-        .map((page) => pageToCard(page, allDEra))
+        .map((page) => pageToCard(page, opts.series, templateSeries))
         .filter(Boolean);
       await expandEffects(batchCards);
       for (const c of batchCards) byTitle.set(c.title, c);
 
-      if (batch % 20 === 0) console.log(`  ...${byTitle.size} D-era card pages so far (${requestsMade} requests)`);
-      if (!json.continue) break;
+      if (batch % 20 === 0) console.log(`  ...${byTitle.size} card pages so far (${requestsMade} requests)`);
+      if (!json.continue || batch >= opts.limit) break;
       cont = json.continue;
       await sleep(DELAY_MS);
     }
@@ -253,18 +303,22 @@ async function main() {
     scrapedAt: new Date().toISOString(),
     sourceUrl: 'https://cardfight.fandom.com',
     license: 'CC BY-SA 3.0',
+    series: opts.series,
     requestsMade,
     count: cards.length,
     cards,
   };
-  fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
-  fs.writeFileSync(OUTPUT_PATH, JSON.stringify(output, null, 2), 'utf8');
+  writeFileAtomic(opts.out, JSON.stringify(output, null, 2));
 
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
-  console.log(`Done. ${cards.length} card pages, ${requestsMade} requests, ${elapsedSec}s. Wrote ${OUTPUT_PATH}`);
+  console.log(`Done. ${cards.length} card pages, ${requestsMade} requests, ${elapsedSec}s. Wrote ${opts.out}`);
 }
 
-main().catch((err) => {
-  console.error('Fatal error during fandom scrape:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Fatal error during fandom scrape:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { extractCodes, pageToCard, parseArgs };

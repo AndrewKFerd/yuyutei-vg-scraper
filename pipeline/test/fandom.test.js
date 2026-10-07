@@ -1,0 +1,144 @@
+'use strict';
+
+const { describe, it } = require('node:test');
+const assert = require('node:assert/strict');
+
+const { seriesOfCode, familyOfCode, parseSeries, ALL_SERIES } = require('../fandom-series');
+const { extractCodes, pageToCard, parseArgs } = require('../scrape-fandom');
+const { createMatcher } = require('../match-fandom');
+
+describe('seriesOfCode / familyOfCode', () => {
+  it('reads the series off the prefix', () => {
+    assert.equal(seriesOfCode('D-BT01/DSR02'), 'D');
+    assert.equal(seriesOfCode('dz-bt17/001'), 'DZ');
+    assert.equal(seriesOfCode('V-EB05/SSP01'), 'V');
+    assert.equal(seriesOfCode('G-BT01/001'), 'G');
+    assert.equal(seriesOfCode('BT01/S02'), 'OLD');
+    assert.equal(seriesOfCode('PR/0089'), 'OLD');
+    assert.equal(seriesOfCode('VG-X01/001'), null);
+    assert.equal(seriesOfCode('not a code'), null);
+  });
+
+  it('puts D and DZ in one family, every other series on its own', () => {
+    assert.equal(familyOfCode('D-BT01/001'), 'D');
+    assert.equal(familyOfCode('DZ-BT01/001'), 'D');
+    assert.equal(familyOfCode('V-BT01/001'), 'V');
+    assert.equal(familyOfCode('BT01/001'), 'OLD');
+  });
+});
+
+describe('parseSeries', () => {
+  it('parses a comma list case-insensitively, in canonical order', () => {
+    assert.deepEqual(parseSeries('g, v,dz'), ['DZ', 'V', 'G']);
+    assert.deepEqual(parseSeries(ALL_SERIES.join(',')), ALL_SERIES);
+  });
+  it('rejects an unknown name', () => {
+    assert.throws(() => parseSeries('D,X'), /Unknown --series "X"/);
+    assert.throws(() => parseSeries(''), /Unknown --series/);
+  });
+});
+
+describe('extractCodes', () => {
+  const fields = {
+    set1: 'TD01/005<br>TD01/005KR<br>TD01/005EN<br>TD01/005TH',
+    set2: 'BT01/002 (RRR) - BT01/S02 (SP)<br>BT01/002EN (RRR)',
+    set7: 'G-LD03/009<br>G-LD03/009EN',
+    set8: 'DZ-SS16/PGS01 (PGS) 2026<br>V-EB05/SSP01',
+    flavor: 'ignored BT99/001',
+  };
+
+  it('keeps Japanese printings of every series by default, dropping EN/TH/KR ones', () => {
+    assert.deepEqual(extractCodes(fields).sort(), [
+      'BT01/002', 'BT01/S02', 'DZ-SS16/PGS01', 'G-LD03/009', 'TD01/005', 'V-EB05/SSP01',
+    ]);
+  });
+
+  it('does not read a bare code out of the middle of a prefixed one', () => {
+    assert.deepEqual(extractCodes({ set1: 'DZ-BT17/001' }), ['DZ-BT17/001']);
+  });
+
+  it('filters to the requested series', () => {
+    assert.deepEqual(extractCodes(fields, ['G']), ['G-LD03/009']);
+    assert.deepEqual(extractCodes(fields, ['D', 'DZ']), ['DZ-SS16/PGS01']);
+  });
+});
+
+describe('pageToCard', () => {
+  const page = (content, title = 'Some Card') => ({ title, revisions: [{ slots: { main: { content } } }] });
+  const cardTable = '{{CardTable\n|kanji = テスト\n|grade = 1\n|set1 = G-BT01/001<br>BT01/002\n}}';
+
+  it('keeps a page that lists a printing in a selected series, with only those codes', () => {
+    const card = pageToCard(page(cardTable), ['G']);
+    assert.deepEqual(card.codes, ['G-BT01/001']);
+    assert.equal(card.kanji, 'テスト');
+  });
+
+  it('drops a page with no printing in the selected series', () => {
+    assert.equal(pageToCard(page(cardTable), ['D', 'DZ', 'V']), null);
+  });
+
+  it('keeps every page of a D-era-only template when a D-era series is selected, even with no codes', () => {
+    const dTable = '{{DTable\n|kanji = テスト\n}}';
+    assert.ok(pageToCard(page(dTable), ['D'], ['D', 'DZ']));
+    assert.equal(pageToCard(page(dTable), ['G'], ['D', 'DZ']), null);
+  });
+});
+
+describe('parseArgs', () => {
+  it('defaults to every series, unlimited, writing the real file', () => {
+    const o = parseArgs([]);
+    assert.deepEqual(o.series, ALL_SERIES);
+    assert.equal(o.limit, Infinity);
+  });
+
+  it('refuses --limit without --out, so a sample cannot replace data/fandom-raw.json', () => {
+    assert.throws(() => parseArgs(['--limit', '3']), /--out/);
+    assert.equal(parseArgs(['--limit', '3', '--out', 'x.json']).limit, 3);
+  });
+
+  it('rejects bad arguments', () => {
+    assert.throws(() => parseArgs(['--series']), /needs a value/);
+    assert.throws(() => parseArgs(['--limit', '0', '--out', 'x']), /positive integer/);
+    assert.throws(() => parseArgs(['--bogus']), /Unknown argument/);
+  });
+});
+
+describe('createMatcher', () => {
+  const raw = {
+    cards: [
+      { title: 'Dragon', nameEn: 'Dragon', kanji: 'ドラゴン', codes: ['D-BT01/001', 'DZ-BT02/005'] },
+      { title: 'Knight', nameEn: 'Knight', kanji: '騎士', codes: ['G-BT01/001', 'BT01/002'] },
+      { title: 'Hero (V)', nameEn: 'Hero', kanji: '英雄', codes: ['V-BT01/001'] },
+      { title: 'Hero (G)', nameEn: 'Hero G', kanji: '英雄', codes: ['G-BT05/001'] },
+      { title: 'Twin A', nameEn: 'Twin A', kanji: '双子', codes: ['V-BT03/001'] },
+      { title: 'Twin B', nameEn: 'Twin B', kanji: '双子', codes: ['V-BT04/001'] },
+    ],
+  };
+  const find = createMatcher(raw);
+
+  it('matches by exact card code in any series', () => {
+    assert.equal(find('G-BT01/001', 'なんでも').title, 'Knight');
+    assert.equal(find('bt01/002', 'なんでも').title, 'Knight');
+    assert.equal(find('DZ-BT02/005', 'x').title, 'Dragon');
+  });
+
+  it('falls back to the Japanese name within the same series family only', () => {
+    assert.equal(find('V-BT09/050', '騎士'), null); // "騎士" is only a G-/older card
+    assert.equal(find('G-BT09/050', '騎士').title, 'Knight');
+    assert.equal(find('D-BT09/050', 'ドラゴン(箔押し)').title, 'Dragon'); // variant marker stripped
+    assert.equal(find('DZ-BT09/050', 'ドラゴン').title, 'Dragon'); // D and DZ are one family
+  });
+
+  it('disambiguates a shared name by set, and gives up when that is not unique', () => {
+    assert.equal(find('V-BT03/099', '双子').title, 'Twin A');
+    assert.equal(find('V-BT04/099', '双子').title, 'Twin B');
+    assert.equal(find('V-BT09/099', '双子'), null);
+    assert.equal(find('V-BT09/099', '英雄').title, 'Hero (V)'); // the G page is a different family
+  });
+
+  it('returns null for unsupported prefixes, missing codes and an empty scrape', () => {
+    assert.equal(find('VG-X01/001', 'ドラゴン'), null);
+    assert.equal(find('', 'ドラゴン'), null);
+    assert.equal(createMatcher(null)('D-BT01/001', 'ドラゴン'), null);
+  });
+});
