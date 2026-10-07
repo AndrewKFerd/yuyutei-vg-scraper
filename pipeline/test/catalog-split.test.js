@@ -126,8 +126,25 @@ describe('detail shards', () => {
     assert.deepEqual(one.get('gift').cards, {});
   });
 
-  it('refuses a set slug that the API would not serve', () => {
-    assert.throws(() => buildDetailShards([card({ id: 'Bad_Slug/1', setSlug: 'Bad_Slug' })]), /can't be served/);
+  it('skips (with a warning) a set whose slug the API would not serve, instead of failing the build', () => {
+    const warnings = [];
+    const warn = console.warn;
+    console.warn = (m) => warnings.push(m);
+    let shards;
+    try {
+      shards = buildDetailShards([
+        card(),
+        card({ id: 'Bad_Slug/1', setSlug: 'Bad_Slug' }),
+        card({ id: 'x/1', setSlug: undefined }),
+        card({ id: 'a.b/1', setSlug: 'a.b' }),
+      ]);
+    } finally {
+      console.warn = warn;
+    }
+    assert.deepEqual([...shards.keys()], ['dbt08']);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /Bad_Slug/);
+    assert.match(warnings[0], /a\.b/);
   });
 
   it('writeDetailShards rewrites only changed shards and removes shards of vanished sets', () => {

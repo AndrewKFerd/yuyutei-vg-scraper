@@ -98,13 +98,24 @@ function detailOf(card) {
  */
 function buildDetailShards(cards) {
   const bySlug = new Map();
+  const skipped = new Set();
   for (const card of cards) {
     if (!SLUG_RE.test(card.setSlug || '')) {
-      throw new Error(`Card ${card.id} has set slug "${card.setSlug}", which can't be served as a detail shard`);
+      // The API only serves [a-z0-9-] slugs. One odd set must not fail the
+      // whole build (and with it the price-history backup upload): its cards
+      // stay in the catalog, and the modal's error/Retry path covers them.
+      skipped.add(card.setSlug);
+      continue;
     }
     if (!bySlug.has(card.setSlug)) bySlug.set(card.setSlug, {});
     const detail = detailOf(card);
     if (detail) bySlug.get(card.setSlug)[card.id] = detail;
+  }
+  if (skipped.size > 0) {
+    console.warn(
+      `[catalog-split] No detail shard for set slug(s) ${[...skipped].map((s) => JSON.stringify(s)).join(', ')}: ` +
+      'not servable (only lowercase letters, digits and hyphens are). Their cards open without skill text.'
+    );
   }
   const shards = new Map();
   for (const slug of [...bySlug.keys()].sort()) {
