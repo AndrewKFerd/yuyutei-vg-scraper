@@ -133,13 +133,17 @@ function Invoke-Native($label, $exe, $exeArgs) {
 #    taking its lock would put two runs on price-history.json.
 #  - owner gone (no such PID, or the PID was reused by another process):
 #    take over.
-#  - owner exists but its start time can't be read (an elevated process seen
-#    from a normal shell): treated as alive, never as gone.
+#  - owner exists but its start time can't be read (an elevated or protected
+#    process seen from a normal shell): decided by its process NAME, which is
+#    readable across elevation. Not powershell/pwsh: some other process that
+#    inherited a dead run's PID, so the owner is gone, take over. powershell/
+#    pwsh (or a name that can't be read either): possibly the owner at another
+#    elevation, so never taken over and never killed, however old -- the run
+#    skips with a loud warning once past the ceiling.
 #  - ceiling, so a hung run can't block every future run forever: an owner
-#    that is verifiably still the lock's owner after $maxLockMinutes is
-#    presumed hung; it and its child processes are killed (taskkill /T /F)
-#    and the lock is taken over. An owner that can't be verified is not
-#    killed (the PID could belong to anything), only its lock is taken over.
+#    that is verifiably still the lock's owner (same PID and start time) after
+#    $maxLockMinutes is presumed hung; it and its child processes are killed
+#    (taskkill /T /F), and only if it is then gone is the lock taken over.
 #  - old timestamp-only lock: no owner to ask, so the $staleLockMinutes age
 #    rule applies.
 # Backstop outside this script: set the Task Scheduler task to "If the task is

@@ -1,5 +1,5 @@
 # Lock decision logic for refresh-and-push.ps1, kept in its own file so it can
-# be dot-sourced and exercised on its own (see test-refresh-lock.ps1). Only
+# be dot-sourced and exercised on its own (see test/refresh-lock.test.ps1). Only
 # defines functions; nothing runs on load. PowerShell 5.1 compatible, ASCII only.
 #
 # The lock file holds "pid=<n> start=<n> time=<iso>" where start is the owner
@@ -15,21 +15,25 @@
 #                       elevated or system process seen from a non-elevated
 #                       shell) -- NOT the same as gone
 #   FileTime  the start time as a FILETIME (alive only)
+#   Name      the process name, when readable (also for 'unknown')
 function Get-ProcessState($processId) {
     $p = $null
     try {
         $p = [System.Diagnostics.Process]::GetProcessById([int]$processId)
     } catch [System.ArgumentException] {
         # "Process with an Id of n is not running" -- the only way to be gone.
-        return New-Object psobject -Property @{ State = 'gone'; FileTime = $null }
+        return New-Object psobject -Property @{ State = 'gone'; FileTime = $null; Name = $null }
     } catch {
-        return New-Object psobject -Property @{ State = 'unknown'; FileTime = $null }
+        return New-Object psobject -Property @{ State = 'unknown'; FileTime = $null; Name = $null }
     }
+    # The name is readable even when the start time is not (across elevation).
+    $name = $null
+    try { $name = $p.ProcessName } catch { }
     try {
         $ft = $p.StartTime.ToFileTimeUtc()
-        return New-Object psobject -Property @{ State = 'alive'; FileTime = $ft }
+        return New-Object psobject -Property @{ State = 'alive'; FileTime = $ft; Name = $name }
     } catch {
-        return New-Object psobject -Property @{ State = 'unknown'; FileTime = $null }
+        return New-Object psobject -Property @{ State = 'unknown'; FileTime = $null; Name = $name }
     }
 }
 
@@ -86,12 +90,23 @@ function Get-LockDecision($lockText, $ageMinutes, $staleMinutes, $maxMinutes, $l
         }
         return New-Object psobject -Property @{ Action = 'skip'; OwnerPid = $ownerPid; Message = "Another refresh is still running (pid $ownerPid, lock is $age min old). Skipping this run." }
     }
-    # The process exists but can't be identified (unreadable start time on
-    # either side): assume it is the owner and leave it alone. Past the
-    # ceiling it is still not killed -- the PID might belong to something
-    # unrelated -- but the lock is taken over, with a loud warning.
-    if ($age -ge $maxMinutes) {
-        return New-Object psobject -Property @{ Action = 'takeover'; OwnerPid = $ownerPid; Message = "WARNING: lock held $age min by pid $ownerPid, whose start time can't be read, so it can't be confirmed as the owner. Not killing it; taking over the lock anyway because it is past the $maxMinutes min ceiling." }
+    # The PID exists but can't be matched to the lock's owner (its start time is
+    # unreadable -- an elevated or protected process seen from a normal shell --
+    # or the lock holds no usable start time). The process NAME is readable
+    # across elevation and settles the common cases:
+    #  - not powershell/pwsh: the refresh script runs in one of those, so this
+    #    is some other process that inherited a dead run's PID: the owner is
+    #    gone, take over now.
+    #  - powershell/pwsh: it may well be the owner, at another elevation. It is
+    #    never taken over and never killed, however old the lock: skip loudly.
+    #    (The Task Scheduler "stop the task if it runs longer than 2 hours"
+    #    setting is the backstop for a genuinely hung one.)
+    #  - name unreadable too: can't rule the owner out, same as powershell.
+    $name = if ($state.Name) { [string]$state.Name } else { $null }
+    if ($name -and $name -notmatch '^(powershell|pwsh)(\.exe)?$') {
+        return New-Object psobject -Property @{ Action = 'takeover'; OwnerPid = $ownerPid; Message = "Stale lock found (pid $ownerPid is '$name', not a PowerShell process, so it can't be the run that wrote the lock; lock is $age min old) -- taking over." }
     }
-    return New-Object psobject -Property @{ Action = 'skip'; OwnerPid = $ownerPid; Message = "Another refresh is probably still running (pid $ownerPid exists but its start time can't be read; lock is $age min old). Skipping this run." }
+    $who = if ($name) { $name } else { 'a process whose name can not be read' }
+    $loud = if ($age -ge $maxMinutes) { 'WARNING: ' } else { '' }
+    return New-Object psobject -Property @{ Action = 'skip'; OwnerPid = $ownerPid; Message = "${loud}Another refresh may still be running: pid $ownerPid is $who and its start time can't be read, so it can't be told apart from the lock's owner; lock is $age min old. Not taking over or killing it; skipping this run. If it is really hung, the Task Scheduler stop-after-2-hours setting has to end it." }
 }

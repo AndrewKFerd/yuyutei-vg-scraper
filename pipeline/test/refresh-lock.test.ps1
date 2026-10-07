@@ -36,8 +36,20 @@ Check 'live owner, 2 h (below ceiling)' (Decide "pid=100 start=$ft time=x" 120 $
 Check 'live owner, 25+ min but not hung' (Decide "pid=100 start=$ft time=x" 40 $alive) 'skip'
 Check 'dead PID' (Decide "pid=100 start=$ft time=x" 5 $gone) 'takeover'
 Check 'reused PID (different start time)' (Decide "pid=100 start=$ft time=x" 5 $reused) 'takeover'
-Check 'unreadable start time, young' (Decide "pid=100 start=$ft time=x" 5 $unknown) 'skip'
-Check 'unreadable start time, 1 day (never killed)' (Decide "pid=100 start=$ft time=x" 1440 $unknown) 'takeover'
+Check 'unreadable start time, name unreadable too, young' (Decide "pid=100 start=$ft time=x" 5 $unknown) 'skip'
+Check 'unreadable start time, name unreadable too, 1 day: never taken over' (Decide "pid=100 start=$ft time=x" 1440 $unknown) 'skip'
+$unknownPs = { param($p) New-Object psobject -Property @{ State = 'unknown'; FileTime = $null; Name = 'powershell' } }
+$unknownPwsh = { param($p) New-Object psobject -Property @{ State = 'unknown'; FileTime = $null; Name = 'pwsh' } }
+$unknownOther = { param($p) New-Object psobject -Property @{ State = 'unknown'; FileTime = $null; Name = 'svchost' } }
+Check 'unreadable start, powershell (maybe the elevated owner), young' (Decide "pid=100 start=$ft time=x" 5 $unknownPs) 'skip'
+Check 'unreadable start, powershell, over the ceiling: still never taken over' (Decide "pid=100 start=$ft time=x" 1440 $unknownPs) 'skip'
+Check 'unreadable start, pwsh, over the ceiling: still never taken over' (Decide "pid=100 start=$ft time=x" 1440 $unknownPwsh) 'skip'
+Check 'over-ceiling skip is loud' ((Get-LockDecision "pid=100 start=$ft time=x" 1440 $stale $max $unknownPs).Message -like 'WARNING:*') $true
+Check 'unreadable start, not a PowerShell process (reused PID): gone, take over now' (Decide "pid=100 start=$ft time=x" 5 $unknownOther) 'takeover'
+$aliveOther = { param($p) New-Object psobject -Property @{ State = 'alive'; FileTime = $null; Name = 'chrome' } }
+Check 'start=0 lock, live non-PowerShell process: take over' (Decide 'pid=100 start=0 time=x' 5 $aliveOther) 'takeover'
+$alivePs = { param($p) New-Object psobject -Property @{ State = 'alive'; FileTime = 133000000000000000; Name = 'powershell' } }
+Check 'start=0 lock, live powershell: skip even over the ceiling' (Decide 'pid=100 start=0 time=x' 500 $alivePs) 'skip'
 Check 'live owner over the ceiling' (Decide "pid=100 start=$ft time=x" 181 $alive) 'kill-takeover'
 Check 'live owner at the ceiling' (Decide "pid=100 start=$ft time=x" 180 $alive) 'kill-takeover'
 Check 'ceiling names the owner pid' ((Get-LockDecision "pid=100 start=$ft time=x" 200 $stale $max $alive).OwnerPid) 100
@@ -46,7 +58,6 @@ Check 'legacy formatted start, same process' (Decide "pid=100 start=$formatted t
 $reusedLater = { param($p) New-Object psobject -Property @{ State = 'alive'; FileTime = 133000000100000000 } }   # 10 s later
 Check 'legacy formatted start, reused PID' (Decide "pid=100 start=$formatted time=x" 5 $reusedLater) 'takeover'
 Check 'lock written by an owner that could not read its start (0), young' (Decide 'pid=100 start=0 time=x' 5 $alive) 'skip'
-Check 'lock with start=0 over the ceiling is not killed' (Decide 'pid=100 start=0 time=x' 500 $alive) 'takeover'
 Check 'garbage lock text falls back to age (fresh)' (Decide 'garbage' 3 $alive) 'skip'
 
 # The real lookup: this process is alive with a readable start, an absurd PID is gone.
