@@ -14,12 +14,13 @@ function isMissingObject(err) {
   return err?.name === 'NoSuchKey'
 }
 
-function sendJson(res, statusCode, body) {
+function sendJson(res, statusCode, body, cacheControl = 'no-store') {
   res.statusCode = statusCode
   res.setHeader('Content-Type', 'application/json')
   res.setHeader('X-Content-Type-Options', 'nosniff')
-  // Never let the edge cache an error -- the next request should retry.
-  res.setHeader('Cache-Control', 'no-store')
+  // Errors are never edge-cached (the next request should retry) -- except
+  // a deliberately short-lived 404, see notFoundCacheControl below.
+  res.setHeader('Cache-Control', cacheControl)
   res.end(JSON.stringify(body))
 }
 
@@ -28,11 +29,16 @@ function sendJson(res, statusCode, body) {
  *   allowlisted in _supabaseCards.js), or a function deriving it from the
  *   request (api/details/[set].js) that returns null for a request that names
  *   no valid object -- answered 400 without any S3 call
- * @param {{cacheControl: string, errorMessage?: string}} options
+ * @param {{cacheControl: string, errorMessage?: string, notFoundCacheControl?: string}} options
+ *   notFoundCacheControl: Cache-Control for a 404 (default no-store). A route
+ *   open to arbitrary slugs sets a short s-maxage so made-up ones don't each
+ *   cost an S3 GET; 400s and 502s stay no-store.
  */
-export function createProxyHandler(keyOrResolver, { cacheControl, errorMessage = 'Failed to load data' }) {
+export function createProxyHandler(
+  keyOrResolver,
+  { cacheControl, errorMessage = 'Failed to load data', notFoundCacheControl = 'no-store' }
+) {
   const dynamic = typeof keyOrResolver === 'function'
-  const logTag = `[api ${dynamic ? 'dynamic' : keyOrResolver}]`
 
   return async function handler(req, res) {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -48,6 +54,8 @@ export function createProxyHandler(keyOrResolver, { cacheControl, errorMessage =
       return
     }
 
+    // The actual key, so a missing shard is identifiable in the logs.
+    const logTag = `[api ${key}]`
     let body
     try {
       body = await fetchObjectStream(key)
@@ -55,7 +63,7 @@ export function createProxyHandler(keyOrResolver, { cacheControl, errorMessage =
       if (isMissingObject(err)) {
         // One line, so a key that stays missing is visible in the logs.
         console.warn(`${logTag} Object not found in bucket (404).`)
-        sendJson(res, 404, { error: 'Not found' })
+        sendJson(res, 404, { error: 'Not found' }, notFoundCacheControl)
         return
       }
       // Log the real cause server-side only -- S3 errors can name the

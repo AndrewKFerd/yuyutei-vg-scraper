@@ -16,8 +16,9 @@ function slugFromRequest(req) {
   let slug = req.query?.set
   if (Array.isArray(slug)) slug = slug[0]
   if (slug === undefined) {
-    const pathname = (req.url || '').split('?')[0]
-    slug = decodeURIComponent(pathname.split('/').filter(Boolean).pop() || '')
+    // Exactly /api/details/<slug>: a deeper path is not this route.
+    const segments = (req.url || '').split('?')[0].split('/').filter(Boolean)
+    slug = segments.length === 3 && segments[1] === 'details' ? decodeURIComponent(segments[2]) : ''
   }
   return slug
 }
@@ -33,4 +34,8 @@ export default createProxyHandler((req) => {
   // catalog, so they share its edge cache lifetime.
   cacheControl: 'public, max-age=0, s-maxage=3600, stale-while-revalidate=86400',
   errorMessage: 'Failed to load card details',
+  // Anyone can ask for a made-up slug; caching the 404 briefly at the edge
+  // keeps each one from costing an S3 GET. Short, so a shard the pipeline is
+  // about to upload doesn't stay "missing" for long.
+  notFoundCacheControl: 'public, max-age=0, s-maxage=300',
 })

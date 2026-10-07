@@ -20,9 +20,13 @@ const API_ROUTES = {
 const DETAILS_ROUTE = '/api/details'
 const DETAILS_MODULE = './api/details/[set].js'
 
+// Exactly one path segment after /api/details/, as the [set] route matches in
+// production (/api/details/a/dzbt12 is a 404 there). Anything else -> '' (which
+// the slug check then rejects).
 function detailsSlug(req) {
   try {
-    return decodeURIComponent((req.url || '').split('?')[0].split('/').filter(Boolean).pop() || '')
+    const segments = (req.url || '').split('?')[0].split('/').filter(Boolean)
+    return segments.length === 1 ? decodeURIComponent(segments[0]) : ''
   } catch {
     return ''
   }
