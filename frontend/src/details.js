@@ -21,6 +21,25 @@ function isValidShard(data) {
 // A failed load is forgotten so the modal's Retry (or the next open) tries
 // the network again; a successful one stays for the session.
 const loads = new Map()
+// Sets whose memoized shard came from the network (not Cache Storage) in this
+// session, i.e. can't be older than the page load.
+const fetchedFresh = new Set()
+
+function startLoad(setSlug, { force }) {
+  const url = `${DETAILS_URL_PREFIX}${encodeURIComponent(setSlug)}`
+  const promise = getCachedJson(url, { ttlMs: DETAILS_TTL_MS, validate: isValidShard, force }).then(
+    ({ data, fromCache }) => {
+      if (!isValidShard(data)) throw new Error('unexpected response')
+      if (!fromCache) fetchedFresh.add(setSlug)
+      return data.cards
+    }
+  )
+  loads.set(setSlug, promise)
+  promise.catch(() => {
+    if (loads.get(setSlug) === promise) loads.delete(setSlug)
+  })
+  return promise
+}
 
 /**
  * Resolves to the set's `{ [cardId]: { skillTextEn, ... } }` map. Rejects on
@@ -28,23 +47,24 @@ const loads = new Map()
  * uploaded) so the caller can show an error with a retry.
  */
 export function loadSetDetails(setSlug) {
-  let promise = loads.get(setSlug)
-  if (!promise) {
-    const url = `${DETAILS_URL_PREFIX}${encodeURIComponent(setSlug)}`
-    promise = getCachedJson(url, { ttlMs: DETAILS_TTL_MS, validate: isValidShard }).then(({ data }) => {
-      if (!isValidShard(data)) throw new Error('unexpected response')
-      return data.cards
-    })
-    loads.set(setSlug, promise)
-    promise.catch(() => {
-      if (loads.get(setSlug) === promise) loads.delete(setSlug)
-    })
-  }
-  return promise
+  return loads.get(setSlug) || startLoad(setSlug, { force: false })
+}
+
+/**
+ * For a card the loaded shard has no entry for. That is normal for a card
+ * with no text at all, but it is also what a shard cached before the card
+ * existed looks like. If the shard came from the cache, fetch it once more
+ * bypassing the cache and resolve to the new map; resolves null when that
+ * can't tell us anything new (it already came from the network this session).
+ */
+export function reloadSetDetailsIfCached(setSlug) {
+  if (fetchedFresh.has(setSlug)) return Promise.resolve(null)
+  return startLoad(setSlug, { force: true })
 }
 
 /** Drops the in-memory and cached shards (used by "Refresh now"); they reload lazily. */
 export async function clearDetailsCache() {
   loads.clear()
+  fetchedFresh.clear()
   await clearCachedJsonByPrefix(DETAILS_URL_PREFIX)
 }

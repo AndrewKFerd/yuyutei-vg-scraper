@@ -16,7 +16,7 @@ import {
   summarizeSeries,
 } from '../history'
 import { imageUrl2x, imageUrlHd } from '../images'
-import { loadSetDetails } from '../details'
+import { loadSetDetails, reloadSetDetailsIfCached } from '../details'
 import { stockInfo } from '../stock'
 import { useDialogFocus } from '../useDialogFocus'
 
@@ -346,7 +346,21 @@ function CardModal({
   useEffect(() => {
     if (!setSlug) return
     let cancelled = false
-    loadSetDetails(setSlug).then(
+    const load = async () => {
+      let cards = await loadSetDetails(setSlug)
+      // A card with no entry is normal when it has no text, but it is also
+      // what a shard cached before the card existed looks like: once per
+      // set, refetch bypassing the cache before concluding "no skill text".
+      if (cardId && !cards[cardId]) {
+        try {
+          cards = (await reloadSetDetailsIfCached(setSlug)) || cards
+        } catch {
+          // offline etc.: the cached shard is still the best there is
+        }
+      }
+      return cards
+    }
+    load().then(
       (cards) => {
         if (!cancelled) setDetailState({ slug: setSlug, status: 'ready', cards })
       },
@@ -357,7 +371,7 @@ function CardModal({
     return () => {
       cancelled = true
     }
-  }, [setSlug, dataVersion, detailTry])
+  }, [setSlug, cardId, dataVersion, detailTry])
 
   const retryDetails = useCallback(() => {
     setDetailState({ slug: setSlug, status: 'loading', cards: null })
