@@ -232,6 +232,21 @@ describe('mergeScrapes (a partial --series run must not drop the other series)',
     assert.deepEqual(out.series, ['D', 'DZ', 'G']);
   });
 
+  it('stamps the inferred family on kept codeless pages, so EX30/EX31 still match after a merge', () => {
+    const legacy = {
+      cards: [
+        { title: 'Magic for Finding Lost Accessories', nameEn: 'Magic for Finding Lost Accessories', kanji: '失せ物探しの魔法', codes: [] },
+        { title: 'Magic to Create a Field of Flowers', nameEn: 'Magic to Create a Field of Flowers', kanji: '花畑を作る魔法', codes: [] },
+      ],
+    };
+    const merged = mergeScrapes(legacy, [], ['V']); // an empty V scrape
+    assert.deepEqual(merged.cards.map((c) => c.family), ['D', 'D']);
+    // the merged file now records `series`, so the matcher no longer infers legacy D-era
+    const find = createMatcher({ series: merged.series, cards: merged.cards });
+    assert.equal(find('DZ-BT11/EX30', '失せ物探しの魔法').title, 'Magic for Finding Lost Accessories');
+    assert.equal(find('DZ-BT11/EX31', '花畑を作る魔法').title, 'Magic to Create a Field of Flowers');
+  });
+
   it('drops a codeless page of a family that was rescraped but did not come back', () => {
     const out = mergeScrapes(existing, [], ['D', 'DZ']);
     assert.equal(out.cards.some((c) => c.title === 'Codeless'), false);

@@ -265,7 +265,11 @@ function mergeScrapes(existing, scrapedCards, scrapedSeries) {
     const otherCodes = (old.codes || []).filter((c) => !scrapedSeries.includes(seriesOfCode(c)));
     const family = old.family || (old.codes?.length ? null : familyOfSeries(LEGACY_SERIES[0]));
     const codelessOfOtherFamily = (old.codes || []).length === 0 && family && !familyScraped(family);
-    if (otherCodes.length > 0 || codelessOfOtherFamily) byTitle.set(old.title, { ...old, codes: otherCodes });
+    if (otherCodes.length > 0 || codelessOfOtherFamily) {
+      // A codeless page keeps its (possibly inferred) family: once the merged file
+      // records a `series`, match-fandom no longer infers it, so it must be stamped.
+      byTitle.set(old.title, { ...old, codes: otherCodes, ...(otherCodes.length === 0 && family ? { family } : {}) });
+    }
   }
   for (const page of scrapedCards) {
     const prior = byTitle.get(page.title);
