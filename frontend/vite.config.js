@@ -8,11 +8,34 @@ import react from '@vitejs/plugin-react'
 // Route -> [production handler module, bucket object / local file name].
 const API_ROUTES = {
   '/api/cards': ['./api/cards.js', 'cards.json'],
+  '/api/catalog': ['./api/catalog.js', 'catalog.json'],
   '/api/history': ['./api/history.js', 'history-public.json'],
   '/api/movers': ['./api/movers.js', 'movers.json'],
 }
 
-// Dev-only stand-in for the bucket: streams the same three files from a
+// /api/details/<setSlug> is a file-system dynamic route in production
+// (api/details/[set].js); the dev server mounts it by prefix and passes the
+// slug on as req.query.set, as Vercel does. Locally it maps to
+// <LOCAL_DATA_DIR>/details/<slug>.json.
+const DETAILS_ROUTE = '/api/details'
+const DETAILS_MODULE = './api/details/[set].js'
+
+function detailsSlug(req) {
+  try {
+    return decodeURIComponent((req.url || '').split('?')[0].split('/').filter(Boolean).pop() || '')
+  } catch {
+    return ''
+  }
+}
+
+function sendLocalError(res, statusCode, message) {
+  res.statusCode = statusCode
+  res.setHeader('Content-Type', 'application/json')
+  res.setHeader('Cache-Control', 'no-store')
+  res.end(JSON.stringify({ error: message }))
+}
+
+// Dev-only stand-in for the bucket: streams the same files from a
 // local directory (e.g. LOCAL_DATA_DIR=../pipeline/data), so the site can
 // be run and tested without Supabase credentials. Mirrors the production
 // handler's status codes (405 / 404 JSON) so the client paths match.
@@ -46,8 +69,8 @@ async function serveLocalFile(req, res, filePath) {
   }
 }
 
-// Serves /api/cards, /api/history and /api/movers during `vite dev` by
-// calling the exact same handlers api/*.js export for production, so local
+// Serves /api/cards, /api/catalog, /api/details/<slug>, /api/history and
+// /api/movers during `vite dev` by calling the exact same handlers api/*.js export for production, so local
 // dev exercises the real Supabase-backed path -- unless LOCAL_DATA_DIR is
 // set, in which case they're served from files in that directory instead.
 function apiDevMiddleware(env) {
@@ -59,6 +82,20 @@ function apiDevMiddleware(env) {
       if (localDir) {
         server.config.logger.info(`  [api] Serving /api/* from LOCAL_DATA_DIR: ${localDir}`)
       }
+      server.middlewares.use(DETAILS_ROUTE, async (req, res) => {
+        const slug = detailsSlug(req)
+        req.query = { set: slug }
+        if (localDir) {
+          // Same slug check production does before touching storage.
+          const { detailKeyForSlug } = await import(new URL('./api/_supabaseCards.js', import.meta.url).href)
+          const key = detailKeyForSlug(slug)
+          if (!key) return sendLocalError(res, 400, 'Bad request')
+          await serveLocalFile(req, res, path.join(localDir, key))
+          return
+        }
+        const { default: handler } = await import(new URL(DETAILS_MODULE, import.meta.url).href)
+        await handler(req, res)
+      })
       for (const [route, [modulePath, fileName]] of Object.entries(API_ROUTES)) {
         server.middlewares.use(route, async (req, res) => {
           if (localDir) {

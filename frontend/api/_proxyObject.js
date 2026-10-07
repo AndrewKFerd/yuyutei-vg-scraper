@@ -24,17 +24,27 @@ function sendJson(res, statusCode, body) {
 }
 
 /**
- * @param {string} key bucket object key (must be allowlisted in _supabaseCards.js)
+ * @param {string|((req) => string|null)} keyOrResolver bucket object key (must be
+ *   allowlisted in _supabaseCards.js), or a function deriving it from the
+ *   request (api/details/[set].js) that returns null for a request that names
+ *   no valid object -- answered 400 without any S3 call
  * @param {{cacheControl: string, errorMessage?: string}} options
  */
-export function createProxyHandler(key, { cacheControl, errorMessage = 'Failed to load data' }) {
-  const logTag = `[api ${key}]`
+export function createProxyHandler(keyOrResolver, { cacheControl, errorMessage = 'Failed to load data' }) {
+  const dynamic = typeof keyOrResolver === 'function'
+  const logTag = `[api ${dynamic ? 'dynamic' : keyOrResolver}]`
 
   return async function handler(req, res) {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.statusCode = 405
       res.setHeader('Allow', 'GET, HEAD')
       res.end()
+      return
+    }
+
+    const key = dynamic ? keyOrResolver(req) : keyOrResolver
+    if (!key) {
+      sendJson(res, 400, { error: 'Bad request' })
       return
     }
 

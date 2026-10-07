@@ -6,6 +6,9 @@ pipeline/refresh.lock
 pipeline/data/catalog-raw.json
 pipeline/data/cf-vanguard-raw.json
 pipeline/data/cards.json
+pipeline/data/catalog.json
+pipeline/data/details/
+pipeline/data/upload-manifest.json
 pipeline/data/price-history.json
 pipeline/data/price-history.prev.json
 pipeline/data/history-public.json

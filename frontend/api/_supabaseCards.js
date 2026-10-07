@@ -14,7 +14,21 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 // a backup. Only these keys are servable; anything else is refused before
 // any request reaches S3, so a future route (or a bug that lets a caller
 // influence the key) can't turn this into a read-anything proxy.
-const SERVABLE_KEYS = new Set(['cards.json', 'history-public.json', 'movers.json'])
+const SERVABLE_KEYS = new Set(['cards.json', 'catalog.json', 'history-public.json', 'movers.json'])
+
+// Per-set detail shards (details/<setSlug>.json). Set slugs are lowercase
+// letters, digits and hyphens (dzbt14, vpromo-300). The pattern is strict
+// on purpose -- no dots, slashes or uppercase -- so the key can never walk
+// out of details/ or name another object.
+const DETAIL_SLUG_RE = /^[a-z0-9-]+$/
+const DETAIL_KEY_RE = /^details\/[a-z0-9-]+\.json$/
+
+/** The bucket key for a set's detail shard, or null if `slug` isn't a plausible set slug. */
+export function detailKeyForSlug(slug) {
+  return typeof slug === 'string' && slug.length <= 64 && DETAIL_SLUG_RE.test(slug)
+    ? `details/${slug}.json`
+    : null
+}
 
 let client = null
 
@@ -34,7 +48,7 @@ function getClient() {
 
 /** Resolves to the readable body stream of an allowlisted bucket object. */
 export async function fetchObjectStream(key) {
-  if (!SERVABLE_KEYS.has(key)) {
+  if (!SERVABLE_KEYS.has(key) && !(typeof key === 'string' && key.length <= 80 && DETAIL_KEY_RE.test(key))) {
     throw new Error(`Refusing to read non-servable object key "${key}"`)
   }
   const result = await getClient().send(new GetObjectCommand({

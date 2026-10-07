@@ -6,23 +6,58 @@ An English-language, Gelbooru-style search UI over yuyu-tei.jp's entire Cardfigh
 
 Data is generated **offline**, ahead of time, not fetched live at request time.
 The built dataset lives in a **private** Supabase Storage bucket; the only
-server-side pieces in production are three thin Vercel Functions that proxy
+server-side pieces in production are a few thin Vercel Functions that proxy
 an allowlist of its objects.
 
 ```
 pipeline/     -> scrapes yuyu-tei + cf-vanguard.com, translates card names,
-                 records a price/stock history, writes pipeline/data/cards.json
-                 (+ history-public.json, movers.json), uploads them to Supabase
-                 Storage (private bucket -- see pipeline/upload-cards.js)
+                 records a price/stock history, writes pipeline/data/catalog.json
+                 + details/<set>.json (and the full cards.json, see "Catalog
+                 split" below) plus history-public.json and movers.json,
+                 uploads them to Supabase Storage (private bucket -- see
+                 pipeline/upload-cards.js)
 frontend/     -> Vite + React + Tailwind static site
-frontend/api/ -> cards.js, history.js, movers.js: Vercel Functions that proxy
-                 cards.json, history-public.json and movers.json from the
-                 private bucket (they hold the Supabase S3 credentials
+frontend/api/ -> catalog.js, details/[set].js, history.js, movers.js (and the
+                 legacy cards.js): Vercel Functions that proxy catalog.json,
+                 details/<set>.json, history-public.json and movers.json from
+                 the private bucket (they hold the Supabase S3 credentials
                  server-side, and only serve that allowlist -- the private
                  price-history.json is never reachable). The frontend fetches
-                 /api/cards on load and /api/history + /api/movers lazily,
-                 and renders/searches everything client-side
+                 /api/catalog on load, /api/details/<set> when a card of that
+                 set is opened, and /api/history + /api/movers lazily, and
+                 renders/searches everything client-side
+frontend/vercel.json -> pins the functions to icn1 (Seoul), next to the bucket
 ```
+
+### Catalog split
+
+The full per-card file (`cards.json`, ~30 MB) was over Vercel's cacheable
+response size, so `/api/cards` never hit the edge cache: every visitor's daily
+load ran the function and pulled 30 MB out of Supabase. `build-data.js` now
+also writes:
+
+- `catalog.json` — the slim catalog the grid, search, filters and Market Movers
+  use (id, set, rarity, names, translationSource, price, stock, chg7d; ~6 MB raw,
+  ~0.6 MB brotli). `imageUrl`, `detailUrl` and `priceDisplay` are left out when
+  they follow from the id / price (the client recomputes them,
+  `frontend/src/catalogFormat.js`) and kept only where they differ.
+- `details/<setSlug>.json` — one file per set (~300), card id -> the heavy fields
+  (skill text, flavor, kind/clan/grade/power/shield, wiki title), fetched by the
+  card modal when it opens a card of that set.
+
+`upload-cards.js` uploads the shards first, then `catalog.json`, so the catalog
+never refers to a shard the bucket lacks. Shards are re-uploaded only when their
+content hash changed (`data/upload-manifest.json`, recorded per successful
+upload; delete it or set `FORCE_SHARD_UPLOAD=1` to send them all).
+
+**Transition:** the pipeline uploads independently of Vercel deploys, so the
+frontend already deployed still loads `cards.json` via `/api/cards`. Both files
+keep being built and uploaded until the new frontend is live; after that,
+`/api/cards` (`frontend/api/cards.js`, the `cards.json` entries in
+`upload-cards.js`'s `OBJECTS` and the allowlist) can be dropped. Deploy order:
+let at least one pipeline run upload `catalog.json` and the shards, then deploy
+the frontend. `build-data.js` still reads the previous `cards.json` for its
+official-name-loss gate.
 
 ### `pipeline/`
 
@@ -32,8 +67,8 @@ frontend/api/ -> cards.js, history.js, movers.js: Vercel Functions that proxy
 4. `scrape-fandom.js` + `match-fandom.js` — pulls fan-translated English names, card text and flavor for D-/DZ- cards from the [Cardfight!! Vanguard Wiki](https://cardfight.fandom.com) via its MediaWiki API (~700 requests, ~10 min), matched by card code, then by Japanese name. Used for D-/DZ- cards with no official English release; the card popup credits and links the wiki page (the text is CC BY-SA). Manual, occasional step, since wiki text changes slowly.
 5. `translate-engine.js` + `data/glossary.json` — a zero-network, deterministic JA→EN engine (hand-authored glossary + Hepburn romanization) used as the name fallback whenever there's no official English release yet.
 6. `record-history.js` + `price-history.js` — appends this run's prices/stock to `data/price-history.json`, a change log (a listing gets a new `[minute, price, stock]` entry only when something changed), then writes the served `data/history-public.json` (card charts) and `data/movers.json` (24h/7d/30d risers, drops, sold out, restocked, selling fast). It keeps `price-history.prev.json` plus one dated copy per day in `data/history-backups/` (newest 14). It never starts a fresh history silently: a missing local file is restored from the bucket (so run it with `--env-file=.env`), and only if the bucket has none either does it accept `backfill-history.js` (seeds the history from the `cards.json` snapshots in git, Sep 15–18 2026) or `HISTORY_INIT=1`.
-7. `build-data.js` — combines the above (official name/skill text first, then the wiki fan translation for D-/DZ- cards, then the local engine + scraped JP skill text) into `pipeline/data/cards.json`, with a small `chg7d` field on listings whose price moved in the last 7 days.
-8. `upload-cards.js` — uploads `price-history.json` (private backup, never served), `history-public.json`, `movers.json` and `cards.json` to the private Supabase Storage bucket, via its S3-compatible endpoint. Needs `SUPABASE_S3_*` env vars (see `.env.example`); run with `node --env-file=.env upload-cards.js`.
+7. `build-data.js` — combines the above (official name/skill text first, then the wiki fan translation for D-/DZ- cards, then the local engine + scraped JP skill text) into `pipeline/data/cards.json` (plus the `catalog.json` / `details/` split, see "Catalog split"), with a small `chg7d` field on listings whose price moved in the last 7 days.
+8. `upload-cards.js` — uploads `price-history.json` (private backup, never served), `history-public.json`, `movers.json`, the changed detail shards, `catalog.json` and `cards.json` to the private Supabase Storage bucket, via its S3-compatible endpoint. Needs `SUPABASE_S3_*` env vars (see `.env.example`); run with `node --env-file=.env upload-cards.js`.
 
 **Safety gates** (each exits 1, which aborts the scheduled run before anything is recorded or uploaded — except the cf-vanguard one, which keeps the previous file and lets the run continue) and their manual overrides:
 
@@ -47,7 +82,7 @@ frontend/api/ -> cards.js, history.js, movers.js: Vercel Functions that proxy
 | Local `price-history.json` is under 90% the size of the bucket's copy (the history only grows) — nothing is uploaded | `upload-cards.js` | `FORCE_HISTORY_UPLOAD=1` |
 | Backfilling while a history already exists locally / in the bucket, or without bucket credentials | `backfill-history.js` | `--force` / `--force-remote` / `--no-remote-check` |
 
-**This runs on its own**, via `refresh-and-push.ps1` on a recurring local Windows Task Scheduler job (see that file's header for why it's local-only and not a GitHub Actions cron: yuyu-tei hard-blocks GitHub's runner IPs). It scrapes the catalog, records the price history (straight after the catalog scrape, so the run gate aborts a bad scrape before the slow cf-vanguard step), scrapes cf-vanguard (at most about once a day: the step is skipped while `cf-vanguard-raw.json` is under 20 h old, since official names change weekly at most and the scrape is ~9 of a run's ~12 minutes; `FORCE_CF_VANGUARD=1` forces it, and a rejected scrape keeps the old file and its old timestamp so the next run retries), rebuilds `cards.json`, and uploads everything straight to Supabase — no git commit, no Vercel redeploy needed for a data refresh; the live site just fetches fresh data through `/api/cards`, `/api/history` and `/api/movers` (see below), subject to each visitor's own daily client-side cache. It also skips `scrape-fandom.js`, which reuses its last `data/fandom-raw.json` until you rerun it by hand. The other piece it deliberately skips is `scrape-card-detail.js` (see below) — its selectors are unverified and a full run takes hours, so it's a manual, occasional step.
+**This runs on its own**, via `refresh-and-push.ps1` on a recurring local Windows Task Scheduler job (see that file's header for why it's local-only and not a GitHub Actions cron: yuyu-tei hard-blocks GitHub's runner IPs). It scrapes the catalog, records the price history (straight after the catalog scrape, so the run gate aborts a bad scrape before the slow cf-vanguard step), scrapes cf-vanguard (at most about once a day: the step is skipped while `cf-vanguard-raw.json` is under 20 h old, since official names change weekly at most and the scrape is ~9 of a run's ~12 minutes; `FORCE_CF_VANGUARD=1` forces it, and a rejected scrape keeps the old file and its old timestamp so the next run retries), rebuilds `cards.json`, and uploads everything straight to Supabase — no git commit, no Vercel redeploy needed for a data refresh; the live site just fetches fresh data through `/api/catalog`, `/api/details/<set>`, `/api/history` and `/api/movers` (see below), subject to each visitor's own daily client-side cache. It also skips `scrape-fandom.js`, which reuses its last `data/fandom-raw.json` until you rerun it by hand. The other piece it deliberately skips is `scrape-card-detail.js` (see below) — its selectors are unverified and a full run takes hours, so it's a manual, occasional step.
 
 The outputs of the two slow, manual scrapes — `data/card-details-raw.json` and `data/fandom-raw.json` — are committed, so a fresh clone (or another machine) can build immediately without redoing them. The others (`catalog-raw.json`, `cf-vanguard-raw.json`, `cards.json`) are regenerated on every refresh and stay gitignored, as do the history files (`price-history.json`, its derivatives and `data/history-backups/`) — the bucket copy of `price-history.json` is their backup, since unlike everything else here it can't be regenerated.
 
@@ -62,14 +97,14 @@ node scrape-cf-vanguard.js            # cf-vanguard reference -> data/cf-vanguar
 node scrape-card-detail.js            # (optional, slow) JP skill text -> data/card-details-raw.json
 node scrape-set.js <slug>             # (optional) refresh one set in catalog-raw.json; the history records it at the next full scrape
 node scrape-fandom.js                 # (occasional) D-/DZ- fan translations -> data/fandom-raw.json
-node build-data.js                    # writes data/cards.json
-node --env-file=.env upload-cards.js  # uploads the history files + data/cards.json to Supabase Storage
+node build-data.js                    # writes data/cards.json, data/catalog.json, data/details/<set>.json
+node --env-file=.env upload-cards.js  # uploads the history files, changed shards, catalog.json + cards.json to Supabase Storage
 npm test                              # unit tests for the history/run-gate rules
 ```
 
 ### `frontend/`
 
-Vite + React static site — `npm install && npm run dev` (or `npm run build`). It fetches card data from `/api/cards`, and the price history / market movers from `/api/history` and `/api/movers` (lazily, on first card-modal open or Movers visit). These are Vercel Functions (`frontend/api/cards.js`, `history.js`, `movers.js`) that proxy the private Supabase bucket so the S3 credentials never reach the browser, and they only serve an allowlist (`cards.json`, `history-public.json`, `movers.json`); those credentials go in `frontend/.env.local` for local dev (see `pipeline/.env.example` for the variable names) and as Vercel project env vars in production. For local dev without credentials, set `LOCAL_DATA_DIR=../pipeline/data` to serve the three routes from local files instead.
+Vite + React static site — `npm install && npm run dev` (or `npm run build`). It fetches the slim card catalog from `/api/catalog`, a card's skill text/flavor/stats from `/api/details/<set>` when its popup opens, and the price history / market movers from `/api/history` and `/api/movers` (lazily, on first card-modal open or Movers visit). These are Vercel Functions (`frontend/api/catalog.js`, `details/[set].js`, `history.js`, `movers.js`, plus the legacy `cards.js`) that proxy the private Supabase bucket so the S3 credentials never reach the browser, and they only serve an allowlist (`catalog.json`, `cards.json`, `details/<slug>.json` for lowercase-alphanumeric/hyphen slugs, `history-public.json`, `movers.json`); those credentials go in `frontend/.env.local` for local dev (see `pipeline/.env.example` for the variable names) and as Vercel project env vars in production. For local dev without credentials, set `LOCAL_DATA_DIR=../pipeline/data` to serve the routes from local files instead.
 
 ## Data licensing note
 

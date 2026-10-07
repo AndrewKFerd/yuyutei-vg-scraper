@@ -10,6 +10,9 @@
  * wiki (scrape-fandom.js); otherwise fall back to the locally-built
  * translation engine.
  *
+ * Besides the full cards.json it writes the split the new frontend loads:
+ * catalog.json (slim) and details/<setSlug>.json (see catalog-split.js).
+ *
  * Also stamps listings whose price moved in the last 7 days with a small
  * `chg7d` field (from price-history.json, which record-history.js has
  * already updated this run), so tiles can show a change chip without
@@ -27,13 +30,22 @@ const { checkCatalogSize, allowShrinkFromEnv } = require('./catalog-gate');
 const { checkOfficialRetention, allowOfficialShrinkFromEnv } = require('./reference-gate');
 const { toMinute, minuteToIso, normalizeHistory, computeChg7d } = require('./price-history');
 const { writeFileAtomic } = require('./fs-atomic');
+const { buildSlimCatalog, buildDetailShards, writeDetailShards } = require('./catalog-split');
 
 const CATALOG_PATH = path.join(__dirname, 'data', 'catalog-raw.json');
 const SKILLS_PATH = path.join(__dirname, 'data', 'card-details-raw.json');
 const HISTORY_PATH = path.join(__dirname, 'data', 'price-history.json');
-// Uploaded to Supabase Storage by upload-cards.js -- the frontend fetches
-// it through api/cards.js, a private-bucket proxy, not as a static asset.
+// The full per-card file. Still written (and uploaded, served as /api/cards)
+// for two reasons: this build's own gates compare against the previous one,
+// and the frontend currently deployed predates the split below -- the
+// pipeline uploads independently of Vercel deploys, so it must keep working
+// until the new frontend ships. Once it has, upload-cards.js can stop
+// uploading this (README: "Catalog split").
 const OUT_PATH = path.join(__dirname, 'data', 'cards.json');
+// What the new frontend loads (see catalog-split.js): a slim catalog for the
+// grid plus one detail shard per set, fetched when a card is opened.
+const CATALOG_OUT_PATH = path.join(__dirname, 'data', 'catalog.json');
+const DETAILS_DIR = path.join(__dirname, 'data', 'details');
 
 // Baselines from the cards.json this build would replace: its size (the
 // run gate) and which listings had an official English name (the official
@@ -278,6 +290,12 @@ function main() {
     cards,
   };
 
+  // Shards first, then the catalog that points at them, then the full file:
+  // a crash part-way leaves the previous cards.json (the gates' baseline)
+  // untouched, and the next run simply redoes the split.
+  const shards = buildDetailShards(cards);
+  const shardStats = writeDetailShards(DETAILS_DIR, shards);
+  writeFileAtomic(CATALOG_OUT_PATH, JSON.stringify(buildSlimCatalog(cards, { generatedAt: payload.generatedAt })));
   writeFileAtomic(OUT_PATH, JSON.stringify(payload));
 
   console.log(`Wrote ${cards.length} cards to ${OUT_PATH}`);
@@ -287,8 +305,12 @@ function main() {
   if (droppedUrls > 0) {
     console.warn(`${droppedUrls} card(s) had an imageUrl/detailUrl outside the yuyu-tei.jp allowlist (set to null).`);
   }
-  const sizeMb = fs.statSync(OUT_PATH).size / (1024 * 1024);
-  console.log(`Output size: ${sizeMb.toFixed(2)} MB`);
+  const sizeMb = (p) => (fs.statSync(p).size / (1024 * 1024)).toFixed(2);
+  console.log(`Output size: ${sizeMb(OUT_PATH)} MB cards.json, ${sizeMb(CATALOG_OUT_PATH)} MB catalog.json`);
+  console.log(
+    `Detail shards: ${shards.size} sets (${shardStats.written} rewritten, ${shardStats.unchanged} unchanged, ` +
+    `${shardStats.removed} removed)`
+  );
 }
 
 main();

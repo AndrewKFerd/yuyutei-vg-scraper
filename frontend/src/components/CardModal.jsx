@@ -16,6 +16,7 @@ import {
   summarizeSeries,
 } from '../history'
 import { imageUrl2x, imageUrlHd } from '../images'
+import { loadSetDetails } from '../details'
 import { stockInfo } from '../stock'
 import { useDialogFocus } from '../useDialogFocus'
 
@@ -88,7 +89,27 @@ function StatPill({ value }) {
   )
 }
 
-function SkillText({ card }) {
+// `card` is the catalog card merged with its set's detail shard. `status` is
+// that shard's load state: the skill text only exists in the shard, so
+// "no skill text" must not be claimed until it has actually loaded.
+function SkillText({ card, status, onRetry }) {
+  if (status === 'loading') {
+    return <p className="animate-pulse text-sm text-slate-400 dark:text-gold-500/50">Loading skill text…</p>
+  }
+  if (status === 'error') {
+    return (
+      <p
+        role="alert"
+        className="rounded-md border border-dashed border-red-300 p-3 text-sm text-red-600 dark:border-red-400/40 dark:text-red-400"
+      >
+        Couldn&apos;t load the skill text.{' '}
+        <button type="button" onClick={onRetry} className="font-semibold underline underline-offset-2">
+          Retry
+        </button>
+      </p>
+    )
+  }
+
   if (card.skillTextEn) {
     return (
       <div className="rounded-md border border-gold-300 bg-gold-50 p-3 text-sm leading-relaxed whitespace-pre-line text-slate-800 dark:border-gold-700/50 dark:bg-night-700 dark:text-gold-500">
@@ -289,6 +310,12 @@ function CardModal({
   // loader is memoized per session, so after the first open this resolves
   // straight away.
   const [history, setHistory] = useState(undefined)
+  // The card's set shard (skill text, flavor, stats -- not in the slim
+  // catalog). Tagged with the slug it was loaded for, so switching to a card
+  // of another set reads as "loading" rather than showing the old set's data.
+  const [detailState, setDetailState] = useState({ slug: null, status: 'loading', cards: null })
+  const [detailTry, setDetailTry] = useState(0)
+  const setSlug = card?.setSlug
 
   // Reset per card so a previous card's fallback/lightbox/skill state doesn't
   // leak. Keyed on the id, not the object: a catalog refresh swaps in a
@@ -313,6 +340,30 @@ function CardModal({
     }
   }, [card, dataVersion])
 
+  // The set shard is fetched when a card opens (memoized per set, and cached
+  // on disk, so most opens cost nothing). Re-runs after a catalog refresh
+  // (dataVersion), which drops the cached shards, and on Retry.
+  useEffect(() => {
+    if (!setSlug) return
+    let cancelled = false
+    loadSetDetails(setSlug).then(
+      (cards) => {
+        if (!cancelled) setDetailState({ slug: setSlug, status: 'ready', cards })
+      },
+      () => {
+        if (!cancelled) setDetailState({ slug: setSlug, status: 'error', cards: null })
+      }
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [setSlug, dataVersion, detailTry])
+
+  const retryDetails = useCallback(() => {
+    setDetailState({ slug: setSlug, status: 'loading', cards: null })
+    setDetailTry((n) => n + 1)
+  }, [setSlug])
+
   // Escape-to-close, and lock page scroll while the modal is open -- both
   // only need to be active while a card is actually selected.
   useEffect(() => {
@@ -333,6 +384,11 @@ function CardModal({
   }, [card, onClose])
 
   if (!card) return null
+
+  const detailStatus = detailState.slug === setSlug ? detailState.status : 'loading'
+  // Catalog card + its shard entry. A missing entry (a card with no heavy
+  // fields at all is simply absent from its shard) merges nothing.
+  const full = detailStatus === 'ready' ? { ...card, ...detailState.cards[card.id] } : card
 
   const { inStock, label: stockLabel } = stockInfo(card.stock)
   const displayPrice =
@@ -421,11 +477,11 @@ function CardModal({
 
             <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs text-slate-500 dark:text-gold-500/70">
               <span>{card.setCode}</span>
-              <StatPill value={card.kind} />
-              <StatPill value={card.clan} />
-              <StatPill value={card.grade != null ? `Grade ${card.grade}` : null} />
-              <StatPill value={card.power != null ? `Power ${card.power}` : null} />
-              <StatPill value={card.shield != null ? `Shield ${card.shield}` : null} />
+              <StatPill value={full.kind} />
+              <StatPill value={full.clan} />
+              <StatPill value={full.grade != null ? `Grade ${full.grade}` : null} />
+              <StatPill value={full.power != null ? `Power ${full.power}` : null} />
+              <StatPill value={full.shield != null ? `Shield ${full.shield}` : null} />
             </div>
 
             <div>
@@ -444,27 +500,29 @@ function CardModal({
                 </svg>
                 Skill {skillOpen ? '' : '(tap to show)'}
               </button>
-              {skillOpen && <SkillText card={card} />}
+              {skillOpen && <SkillText card={full} status={detailStatus} onRetry={retryDetails} />}
             </div>
 
-            {card.flavorEn ? (
+            {full.flavorEn ? (
               <p className="whitespace-pre-line text-xs italic leading-relaxed text-slate-500 dark:text-gold-500/60">
-                {card.flavorEn}
+                {full.flavorEn}
               </p>
             ) : (
-              card.flavorJp && (
+              full.flavorJp && (
                 <p lang="ja" className="text-xs italic leading-relaxed text-slate-500 dark:text-gold-500/60">
-                  {card.flavorJp}
+                  {full.flavorJp}
                 </p>
               )
             )}
 
-            {/* Wiki text is CC BY-SA -- credit and link the source page. */}
-            {card.translationSource === 'fandom' && (
+            {/* Wiki text is CC BY-SA -- credit and link the source page.
+                Held back while the shard loads: wikiTitle (the exact page,
+                when it differs from the name) only arrives with it. */}
+            {card.translationSource === 'fandom' && detailStatus !== 'loading' && (
               <p className="text-[11px] text-slate-400 dark:text-gold-500/50">
                 English name and text: fan translation from the{' '}
                 <a
-                  href={wikiUrl(card.wikiTitle || card.nameEn)}
+                  href={wikiUrl(full.wikiTitle || card.nameEn)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline underline-offset-2 hover:text-slate-600 dark:hover:text-gold-500"

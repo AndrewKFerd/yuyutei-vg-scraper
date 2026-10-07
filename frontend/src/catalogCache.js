@@ -1,6 +1,6 @@
-// Client-side cache for the JSON the site downloads: the full card catalog
-// (~30 MB — far too big for localStorage's ~5-10 MB quota), plus the much
-// smaller price history and market movers files. All of them go in the
+// Client-side cache for the JSON the site downloads: the slim card catalog
+// (~6 MB — over localStorage's ~5-10 MB quota in practice), the per-set
+// detail shards, and the price history and market movers files. All go in the
 // browser's Cache Storage API, which is backed by disk and sized for
 // exactly this kind of payload. A tiny localStorage entry per URL tracks
 // *when* each was cached.
@@ -18,19 +18,24 @@ const CACHE_NAME = 'yuyutei-catalog-v1'
 // static files -- the dataset lives in a private Supabase Storage bucket,
 // and those endpoints are the only thing allowed to read it (they hold the
 // S3 credentials server-side, never sent to the browser).
-export const CATALOG_URL = '/api/cards'
-// The catalog keeps the timestamp key it had before this cache was
-// generalized, so deploying the change doesn't invalidate every visitor's
-// cached copy and force a fresh ~30 MB download.
-const CATALOG_TIMESTAMP_KEY = 'yuyutei:catalogCachedAt'
+export const CATALOG_URL = '/api/catalog'
 const CATALOG_TTL_MS = 24 * 60 * 60 * 1000 // 1 day
+// The catalog used to be the full ~30 MB /api/cards file, cached under this
+// URL with its own timestamp key. The slim catalog has a new URL (so a stale
+// full copy can never be read as a slim one) and the default timestamp key;
+// the old entry is dropped once, see dropLegacyCatalogCache.
+const LEGACY_CATALOG_URL = '/api/cards'
+const LEGACY_TIMESTAMP_KEY = 'yuyutei:catalogCachedAt'
+// Per-set detail shards (the card modal's skill text etc.) live under this
+// path, one cached entry per set; see details.js.
+export const DETAILS_URL_PREFIX = '/api/details/'
 
 function cacheApiAvailable() {
   return typeof window !== 'undefined' && 'caches' in window
 }
 
 function timestampKey(url) {
-  return url === CATALOG_URL ? CATALOG_TIMESTAMP_KEY : `yuyutei:cachedAt:${url}`
+  return `yuyutei:cachedAt:${url}`
 }
 
 function getCachedAt(url) {
@@ -130,6 +135,45 @@ export async function clearCachedJson(url) {
     localStorage.removeItem(timestampKey(url))
   } catch {
     // ignore — worst case the stale cache just lingers until it expires naturally
+  }
+}
+
+/**
+ * Drops every cached URL under `pathPrefix` (and its timestamp), e.g. all
+ * the per-set detail shards. Cache Storage can be listed, localStorage
+ * entries are matched by their key.
+ */
+export async function clearCachedJsonByPrefix(pathPrefix) {
+  try {
+    if (cacheApiAvailable()) {
+      const cache = await caches.open(CACHE_NAME)
+      for (const request of await cache.keys()) {
+        if (new URL(request.url).pathname.startsWith(pathPrefix)) await cache.delete(request)
+      }
+    }
+    const stampPrefix = timestampKey(pathPrefix)
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(stampPrefix)) localStorage.removeItem(key)
+    }
+  } catch {
+    // ignore — stale entries just expire on their own TTL
+  }
+}
+
+/**
+ * One-time cleanup of the pre-split full catalog: its ~30 MB Cache Storage
+ * entry and timestamp would otherwise sit in the visitor's disk quota
+ * forever, since nothing reads them any more.
+ */
+export async function dropLegacyCatalogCache() {
+  try {
+    if (cacheApiAvailable()) {
+      const cache = await caches.open(CACHE_NAME)
+      await cache.delete(LEGACY_CATALOG_URL)
+    }
+    localStorage.removeItem(LEGACY_TIMESTAMP_KEY)
+  } catch {
+    // ignore
   }
 }
 

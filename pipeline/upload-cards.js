@@ -14,10 +14,26 @@
  *                         restores from if the local copy is lost
  *  - history-public.json  served via /api/history
  *  - movers.json          served via /api/movers
- *  - cards.json           served via /api/cards (required)
+ *  - details/<slug>.json  one shard per set, served via /api/details/<slug>.
+ *                         Only shards whose content changed since their last
+ *                         successful upload are sent (see the manifest below)
+ *  - catalog.json         the slim grid catalog, served via /api/catalog
+ *                         (required). Uploaded only after every shard it
+ *                         relies on, so it never points at a missing one
+ *  - cards.json           the full catalog, served via /api/cards (required).
+ *                         Transition only: the frontend deployed before the
+ *                         catalog split still loads it. Drop this entry once
+ *                         the split frontend is live (README: "Catalog split")
  * The history files go first so the backup lands even if a later upload
  * fails. A missing history/movers file is skipped with a warning (e.g.
  * before the history has been seeded); any upload error exits 1.
+ *
+ * The ~300 shards are rarely all different, so data/upload-manifest.json
+ * remembers the content hash of each shard that was uploaded successfully
+ * (recorded only after that upload succeeded, saved even if a later one
+ * fails). A missing, corrupt or other-bucket manifest means "upload every
+ * shard"; FORCE_SHARD_UPLOAD=1 does the same on demand (e.g. after emptying
+ * the bucket).
  *
  * The bucket's price-history.json is the one copy of the history that
  * outlives this machine, so it's never overwritten by a much smaller local
@@ -27,11 +43,18 @@
  * `node --env-file=.env upload-cards.js`.
  */
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { getBucket, getClient, putFile, headObjectSize } = require('./s3');
+const { writeFileAtomic } = require('./fs-atomic');
 
 const DATA_DIR = path.join(__dirname, 'data');
+const DETAILS_DIR = path.join(DATA_DIR, 'details');
+const MANIFEST_PATH = path.join(DATA_DIR, 'upload-manifest.json');
+const MANIFEST_VERSION = 1;
+const FORCE_SHARDS_ENV = 'FORCE_SHARD_UPLOAD';
+const SHARD_CONCURRENCY = 6;
 const PUBLIC_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
 const HISTORY_KEY = 'price-history.json';
 // The canonical history is append-only, so it essentially only grows;
@@ -43,8 +66,77 @@ const OBJECTS = [
   { key: HISTORY_KEY, cacheControl: 'no-store', required: false },
   { key: 'history-public.json', cacheControl: PUBLIC_CACHE_CONTROL, required: false },
   { key: 'movers.json', cacheControl: PUBLIC_CACHE_CONTROL, required: false },
+  // Detail shards go between these and catalog.json (see main()).
+  { key: 'catalog.json', cacheControl: PUBLIC_CACHE_CONTROL, required: true },
   { key: 'cards.json', cacheControl: PUBLIC_CACHE_CONTROL, required: true },
 ].map((obj) => ({ ...obj, filePath: path.join(DATA_DIR, obj.key) }));
+
+const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
+
+/**
+ * The manifest of successfully uploaded shards ({ key: content hash }).
+ * Anything unusable -- missing, unparseable, wrong version, written for a
+ * different bucket -- yields an empty one, i.e. "upload everything".
+ */
+function readManifest(filePath, bucket) {
+  const empty = { v: MANIFEST_VERSION, bucket, shards: {} };
+  try {
+    const m = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (m && m.v === MANIFEST_VERSION && m.bucket === bucket && m.shards && typeof m.shards === 'object') {
+      return { v: MANIFEST_VERSION, bucket, shards: { ...m.shards } };
+    }
+  } catch {
+    // fall through
+  }
+  return empty;
+}
+
+/**
+ * Which local shards need uploading.
+ * @param {{key: string, hash: string}[]} local
+ * @param {{shards: Object<string, string>}} manifest
+ * @returns {{toUpload: {key: string, hash: string}[], unchanged: number}}
+ */
+function planShardUploads(local, manifest, { force = false } = {}) {
+  const toUpload = local.filter(({ key, hash }) => force || manifest.shards[key] !== hash);
+  return { toUpload, unchanged: local.length - toUpload.length };
+}
+
+/** Local shard files as [{ key: 'details/<slug>.json', filePath, hash }], sorted by key. */
+function listLocalShards(dir = DETAILS_DIR) {
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    throw err;
+  }
+  return names
+    .filter((name) => name.endsWith('.json'))
+    .sort()
+    .map((name) => {
+      const filePath = path.join(dir, name);
+      return { key: `details/${name}`, filePath, hash: sha256(fs.readFileSync(filePath)) };
+    });
+}
+
+/** Runs `worker` over `items` with at most `limit` in flight; stops starting new ones after a failure and rethrows it. */
+async function runPool(items, limit, worker) {
+  let next = 0;
+  let failure = null;
+  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (!failure && next < items.length) {
+      const item = items[next++];
+      try {
+        await worker(item);
+      } catch (err) {
+        failure = failure || err;
+      }
+    }
+  });
+  await Promise.all(lanes);
+  if (failure) throw failure;
+}
 
 /**
  * Whether the local price-history.json may replace the bucket's copy.
@@ -97,14 +189,60 @@ async function main() {
     if (decision.message) console.warn(`[upload-cards] ${decision.message}`);
   }
 
-  for (const { key, filePath, cacheControl } of OBJECTS) {
+  const uploadObject = async ({ key, filePath, cacheControl }) => {
     if (!fs.existsSync(filePath)) {
       console.warn(`[upload-cards] ${filePath} not found -- skipping ${key}.`);
-      continue;
+      return;
     }
     const { bucket, bytes } = await putFile(key, filePath, { contentType: 'application/json', cacheControl });
     console.log(`Uploaded ${(bytes / (1024 * 1024)).toFixed(2)} MB to s3://${bucket}/${key}`);
+  };
+
+  const firstServed = OBJECTS.findIndex((o) => o.key === 'catalog.json');
+  for (const obj of OBJECTS.slice(0, firstServed)) await uploadObject(obj);
+
+  // Shards before the catalog that relies on them: if any shard fails the
+  // run throws here and catalog.json (and cards.json) keep their previous
+  // objects, so the served catalog never refers to a shard the bucket lacks.
+  await uploadShards();
+
+  for (const obj of OBJECTS.slice(firstServed)) await uploadObject(obj);
+}
+
+async function uploadShards() {
+  const bucket = getBucket();
+  const local = listLocalShards();
+  if (local.length === 0) throw new Error(`No detail shards in ${DETAILS_DIR} -- run build-data.js first`);
+  const manifest = readManifest(MANIFEST_PATH, bucket);
+  const { toUpload, unchanged } = planShardUploads(local, manifest, { force: process.env[FORCE_SHARDS_ENV] === '1' });
+
+  // Forget shards that no longer exist locally (their sets are gone).
+  const localKeys = new Set(local.map((s) => s.key));
+  for (const key of Object.keys(manifest.shards)) {
+    if (!localKeys.has(key)) delete manifest.shards[key];
   }
+
+  let bytes = 0;
+  try {
+    await runPool(toUpload, SHARD_CONCURRENCY, async ({ key, filePath, hash }) => {
+      const res = await putFile(key, filePath, { contentType: 'application/json', cacheControl: PUBLIC_CACHE_CONTROL });
+      bytes += res.bytes;
+      // Only now is this shard known to be in the bucket.
+      manifest.shards[key] = hash;
+    });
+  } finally {
+    // Saved even when a later shard failed, so the next run only redoes
+    // what's still missing. (A failed save just means re-uploading some.)
+    try {
+      writeFileAtomic(MANIFEST_PATH, JSON.stringify(manifest));
+    } catch (err) {
+      console.warn(`[upload-cards] Couldn't save ${MANIFEST_PATH} (${err.message}); the next run re-uploads shards.`);
+    }
+  }
+  console.log(
+    `Uploaded ${toUpload.length} of ${local.length} detail shards (${(bytes / (1024 * 1024)).toFixed(2)} MB; ` +
+    `${unchanged} unchanged)`
+  );
 }
 
 if (require.main === module) {
@@ -114,4 +252,12 @@ if (require.main === module) {
   });
 }
 
-module.exports = { checkHistoryUpload, MIN_HISTORY_SHARE };
+module.exports = {
+  checkHistoryUpload,
+  MIN_HISTORY_SHARE,
+  readManifest,
+  planShardUploads,
+  listLocalShards,
+  runPool,
+  OBJECTS,
+};

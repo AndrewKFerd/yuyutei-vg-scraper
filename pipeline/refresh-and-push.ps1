@@ -33,12 +33,14 @@
 #     one; otherwise it keeps the previous file (and so its old mtime, which
 #     makes the next run retry) and exits 0, so the run carries on with the
 #     last good official names (reference-gate.js)
-#  4. build-data.js      -> data/cards.json (applies the same size gate
-#     against the cards.json it would replace, refuses to drop >2% of the
-#     listings that had an official English name, and adds each listing's
-#     chg7d from the history step 2 just updated)
+#  4. build-data.js      -> data/cards.json, plus the slim catalog.json and
+#     details/<set>.json shards the frontend loads (applies the same size
+#     gate against the cards.json it would replace, refuses to drop >2% of
+#     the listings that had an official English name, and adds each
+#     listing's chg7d from the history step 2 just updated)
 #  5. upload-cards.js    -> uploads price-history.json (private backup),
-#     history-public.json, movers.json, then cards.json -- or nothing at
+#     history-public.json, movers.json, the detail shards whose content
+#     changed, then catalog.json and cards.json -- or nothing at
 #     all if the local history is <90% the size of the bucket's copy (the
 #     history only grows; FORCE_HISTORY_UPLOAD=1 overrides)
 #
