@@ -1,4 +1,4 @@
-import { dropLegacyCatalogCache, getCachedCatalog } from './catalogCache'
+import { CATALOG_FORMAT_VERSION, dropLegacyCatalogCache, getCachedCatalog } from './catalogCache'
 import { hydrateCards } from './catalogFormat'
 import { clearDetailsCache } from './details'
 import { clearHistoryCache } from './history'
@@ -32,6 +32,9 @@ export async function fetchCatalog({ force = false } = {}) {
 
   if (!data || !Array.isArray(data.cards)) {
     throw new Error('Card catalog response has an unexpected shape.')
+  }
+  if (data.v !== CATALOG_FORMAT_VERSION) {
+    throw new Error('Card catalog response has an unexpected format version -- try reloading the page.')
   }
   hydrateCards(data.cards)
   // Fire and forget: the pre-split ~30 MB copy is useless now.

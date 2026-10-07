@@ -287,6 +287,13 @@ function writeOutput(skills) {
 
 async function main() {
   const { limit, sets, force, missing } = parseArgs();
+  // --force means "refetch everything in scope", --missing "only what could
+  // still be filled in": contradictory, so refuse rather than guess (before
+  // this check --missing silently won).
+  if (force && missing) {
+    console.error('--force and --missing can\'t be combined: --force refetches every card in scope, --missing only the ones a fetch could fill in. Pick one.');
+    process.exit(1);
+  }
 
   let catalog;
   try {

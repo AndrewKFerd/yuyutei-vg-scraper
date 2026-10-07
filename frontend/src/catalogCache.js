@@ -179,8 +179,15 @@ export async function dropLegacyCatalogCache() {
 
 // Never cache (and never trust a cached copy of) a catalog with no cards —
 // a truncated upload would otherwise stick for a whole day.
+// The slim catalog's format version (pipeline/catalog-split.js writes v: 1):
+// anything else -- the old full file, a future format this build can't read --
+// is invalid, so it's neither cached nor trusted.
+export const CATALOG_FORMAT_VERSION = 1
+
 function isValidCatalog(data) {
-  return Boolean(data) && Array.isArray(data.cards) && data.cards.length > 0
+  return (
+    Boolean(data) && data.v === CATALOG_FORMAT_VERSION && Array.isArray(data.cards) && data.cards.length > 0
+  )
 }
 
 /**
