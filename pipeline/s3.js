@@ -66,6 +66,11 @@ function getClient() {
       // Supabase's S3-compatible endpoint needs path-style addressing
       // (endpoint/bucket/key), not virtual-hosted-style (bucket.endpoint/key).
       forcePathStyle: true,
+      // By default bodies of 1 MB or more get "Expect: 100-continue", and the
+      // handler then waits for the server's 100 before sending. An endpoint
+      // that ignores Expect would stall every large PUT (catalog.json,
+      // cards.json, price-history.json) until a timeout. Send the body at once.
+      expectContinueHeader: false,
       requestHandler: new NodeHttpHandler({
         connectionTimeout: S3_CONNECTION_TIMEOUT_MS,
         socketTimeout: S3_SOCKET_TIMEOUT_MS,

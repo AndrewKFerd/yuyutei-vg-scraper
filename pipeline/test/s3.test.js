@@ -22,6 +22,12 @@ describe('S3 client timeouts', () => {
     assert.equal(cfg.throwOnRequestTimeout, true);
   });
 
+  it('does not send Expect: 100-continue for large bodies', async () => {
+    const cfg = s3.getClient().config;
+    const value = typeof cfg.expectContinueHeader === 'function' ? await cfg.expectContinueHeader() : cfg.expectContinueHeader;
+    assert.equal(value, false);
+  });
+
   it('listObjects follows pagination and strips the ETag quotes', async () => {
     const client = s3.getClient();
     const realSend = client.send;
