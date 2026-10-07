@@ -22,6 +22,26 @@ describe('S3 client timeouts', () => {
     assert.equal(cfg.throwOnRequestTimeout, true);
   });
 
+  it('listObjects follows pagination and strips the ETag quotes', async () => {
+    const client = s3.getClient();
+    const realSend = client.send;
+    const seen = [];
+    client.send = async (command) => {
+      seen.push(command.input.ContinuationToken);
+      return command.input.ContinuationToken
+        ? { Contents: [{ Key: 'details/b.json', ETag: '"bb"', Size: 2 }], IsTruncated: false }
+        : { Contents: [{ Key: 'details/a.json', ETag: '"aa"', Size: 1 }], IsTruncated: true, NextContinuationToken: 'tok' };
+    };
+    try {
+      const found = await s3.listObjects('details/');
+      assert.deepEqual([...found.keys()], ['details/a.json', 'details/b.json']);
+      assert.equal(found.get('details/b.json').etag, 'bb');
+      assert.deepEqual(seen, [undefined, 'tok']);
+    } finally {
+      client.send = realSend;
+    }
+  });
+
   it('leaves room for a 30 MB upload on a slow link', () => {
     // 30 MB within the wall-clock cap needs >= ~35 KB/s; the idle timeout never cuts a moving transfer.
     assert.ok(30 * 1024 * 1024 / (s3.S3_REQUEST_TIMEOUT_MS / 1000) < 40 * 1024);

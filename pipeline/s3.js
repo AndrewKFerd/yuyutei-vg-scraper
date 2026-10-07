@@ -13,7 +13,9 @@
 
 const fs = require('fs');
 const { NodeHttpHandler } = require('@smithy/node-http-handler'); // the SDK's own transport (already installed with client-s3)
-const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
+const {
+  S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand,
+} = require('@aws-sdk/client-s3');
 
 const ENV_VARS = [
   'SUPABASE_S3_ENDPOINT',
@@ -79,18 +81,50 @@ function getClient() {
   return client;
 }
 
-/** Uploads a local file; resolves to { bucket, key, bytes }. Throws on any error. */
+/**
+ * Uploads a local file; resolves to { bucket, key, bytes, etag }. Throws on
+ * any error. The body goes up in one PutObject (never multipart), so for a
+ * store that follows S3 the returned ETag is the MD5 of the content.
+ */
 async function putFile(key, filePath, { contentType = 'application/json', cacheControl } = {}) {
   const bucket = getBucket();
   const body = fs.readFileSync(filePath);
-  await getClient().send(new PutObjectCommand({
+  const res = await getClient().send(new PutObjectCommand({
     Bucket: bucket,
     Key: key,
     Body: body,
     ContentType: contentType,
     ...(cacheControl ? { CacheControl: cacheControl } : {}),
   }));
-  return { bucket, key, bytes: body.length };
+  return { bucket, key, bytes: body.length, etag: res?.ETag ?? null };
+}
+
+/** An ETag without its quotes (S3 returns them quoted), or null. */
+function normalizeEtag(etag) {
+  return typeof etag === 'string' ? etag.replace(/^"|"$/g, '') : null;
+}
+
+/** Every object under `prefix` as Map key -> { etag, size }; follows pagination. */
+async function listObjects(prefix) {
+  const bucket = getBucket();
+  const found = new Map();
+  let token;
+  do {
+    const res = await getClient().send(
+      new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token }),
+      { abortSignal: AbortSignal.timeout(S3_DOWNLOAD_TIMEOUT_MS) }
+    );
+    for (const obj of res.Contents || []) found.set(obj.Key, { etag: normalizeEtag(obj.ETag), size: obj.Size });
+    token = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (token);
+  return found;
+}
+
+/** Deletes one object (a missing one is not an error, as in S3). */
+async function deleteObject(key) {
+  await getClient().send(new DeleteObjectCommand({ Bucket: getBucket(), Key: key }), {
+    abortSignal: AbortSignal.timeout(S3_DOWNLOAD_TIMEOUT_MS),
+  });
 }
 
 // GET: only NoSuchKey means "no such object". Any other 404 (a missing
@@ -141,6 +175,9 @@ module.exports = {
   getBucket,
   getClient,
   putFile,
+  normalizeEtag,
+  listObjects,
+  deleteObject,
   getObjectBuffer,
   headObjectSize,
   isMissingObject,

@@ -28,12 +28,17 @@
  * fails. A missing history/movers file is skipped with a warning (e.g.
  * before the history has been seeded); any upload error exits 1.
  *
- * The ~300 shards are rarely all different, so data/upload-manifest.json
- * remembers the content hash of each shard that was uploaded successfully
- * (recorded only after that upload succeeded, saved even if a later one
- * fails). A missing, corrupt or other-bucket manifest means "upload every
- * shard"; FORCE_SHARD_UPLOAD=1 does the same on demand (e.g. after emptying
- * the bucket).
+ * The ~300 shards are rarely all different, so each run lists details/ in the
+ * bucket (one paginated ListObjectsV2) and uploads only the shards that are
+ * missing there or whose remote ETag differs from the local content's MD5
+ * (the ETag of a single-part PUT, which is how putFile uploads). That makes
+ * it self-healing when the bucket is changed or emptied elsewhere.
+ * data/upload-manifest.json is just a cache of the ETag the bucket returned
+ * for each upload, for a store whose ETags aren't MD5s (recorded only after
+ * an upload succeeded, saved even if a later one fails; unusable = ignored).
+ * FORCE_SHARD_UPLOAD=1 uploads every shard. Once the new catalog.json is up,
+ * remote shards of sets that no longer exist are deleted (never more than a
+ * fifth of them in one run).
  *
  * The bucket's price-history.json is the one copy of the history that
  * outlives this machine, so it's never overwritten by a much smaller local
@@ -46,13 +51,13 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { getBucket, getClient, putFile, headObjectSize } = require('./s3');
+const { getBucket, getClient, putFile, headObjectSize, listObjects, deleteObject, normalizeEtag } = require('./s3');
 const { writeFileAtomic } = require('./fs-atomic');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const DETAILS_DIR = path.join(DATA_DIR, 'details');
 const MANIFEST_PATH = path.join(DATA_DIR, 'upload-manifest.json');
-const MANIFEST_VERSION = 1;
+const MANIFEST_VERSION = 2; // v1 mapped key -> hash only; it is ignored (every shard is re-checked against the bucket)
 const FORCE_SHARDS_ENV = 'FORCE_SHARD_UPLOAD';
 const SHARD_CONCURRENCY = 6;
 const PUBLIC_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
@@ -72,11 +77,15 @@ const OBJECTS = [
 ].map((obj) => ({ ...obj, filePath: path.join(DATA_DIR, obj.key) }));
 
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
+const md5 = (buffer) => crypto.createHash('md5').update(buffer).digest('hex');
 
 /**
- * The manifest of successfully uploaded shards ({ key: content hash }).
- * Anything unusable -- missing, unparseable, wrong version, written for a
- * different bucket -- yields an empty one, i.e. "upload everything".
+ * A cache of what this machine last uploaded: { key: { hash, etag } } -- the
+ * content hash of each shard and the ETag the bucket answered with. It is
+ * only a hint (see planShardUploads: the bucket's own listing decides), so
+ * anything unusable -- missing, unparseable, wrong version, written for a
+ * different bucket -- yields an empty one, which costs at most some
+ * unnecessary re-uploads.
  */
 function readManifest(filePath, bucket) {
   const empty = { v: MANIFEST_VERSION, bucket, shards: {} };
@@ -92,14 +101,46 @@ function readManifest(filePath, bucket) {
 }
 
 /**
- * Which local shards need uploading.
- * @param {{key: string, hash: string}[]} local
- * @param {{shards: Object<string, string>}} manifest
- * @returns {{toUpload: {key: string, hash: string}[], unchanged: number}}
+ * Which local shards need uploading, judged against what the bucket actually
+ * holds (one listing per run), so a bucket changed or emptied elsewhere heals
+ * itself. A shard is left alone only if it exists remotely AND its remote
+ * ETag matches either the MD5 of the local content (a single-part PUT's ETag
+ * on S3) or the ETag this machine got back when it last uploaded this exact
+ * content (manifest) -- the latter keeps it working on a store whose ETags
+ * aren't MD5s, instead of re-uploading everything every run.
+ *
+ * @param {{key: string, hash: string, md5: string}[]} local
+ * @param {Map<string, {etag: string|null}>} remote   from listObjects('details/')
+ * @param {{shards: Object<string, {hash: string, etag: string|null}>}} manifest
+ * @returns {{toUpload: object[], unchanged: number}}
  */
-function planShardUploads(local, manifest, { force = false } = {}) {
-  const toUpload = local.filter(({ key, hash }) => force || manifest.shards[key] !== hash);
+function planShardUploads(local, remote, manifest, { force = false } = {}) {
+  const toUpload = local.filter(({ key, hash, md5: localMd5 }) => {
+    if (force) return true;
+    const remoteEtag = remote.get(key)?.etag;
+    if (!remoteEtag) return true; // missing remotely (or no ETag to compare)
+    if (remoteEtag === localMd5) return false;
+    const known = manifest.shards[key];
+    return !(known && known.hash === hash && known.etag && known.etag === remoteEtag);
+  });
   return { toUpload, unchanged: local.length - toUpload.length };
+}
+
+/**
+ * Remote shard keys that no local shard accounts for (their sets are gone).
+ * Refuses (returns none, with a reason) if that would be more than a fifth
+ * of the remote shards -- a half-built local details/ must not empty the bucket.
+ */
+function planShardPrune(local, remote, { maxShare = 0.2 } = {}) {
+  const localKeys = new Set(local.map((s) => s.key));
+  const orphans = [...remote.keys()].filter((k) => /^details\/[a-z0-9-]+\.json$/.test(k) && !localKeys.has(k));
+  if (remote.size > 0 && orphans.length > remote.size * maxShare) {
+    return {
+      orphans: [],
+      reason: `${orphans.length} of ${remote.size} remote shards look orphaned (over ${Math.round(maxShare * 100)}%), not deleting`,
+    };
+  }
+  return { orphans, reason: null };
 }
 
 /** Local shard files as [{ key: 'details/<slug>.json', filePath, hash }], sorted by key. */
@@ -116,7 +157,8 @@ function listLocalShards(dir = DETAILS_DIR) {
     .sort()
     .map((name) => {
       const filePath = path.join(dir, name);
-      return { key: `details/${name}`, filePath, hash: sha256(fs.readFileSync(filePath)) };
+      const content = fs.readFileSync(filePath);
+      return { key: `details/${name}`, filePath, hash: sha256(content), md5: md5(content) };
     });
 }
 
@@ -204,17 +246,37 @@ async function main() {
   // Shards before the catalog that relies on them: if any shard fails the
   // run throws here and catalog.json (and cards.json) keep their previous
   // objects, so the served catalog never refers to a shard the bucket lacks.
-  await uploadShards();
+  const shards = await uploadShards();
 
   for (const obj of OBJECTS.slice(firstServed)) await uploadObject(obj);
+
+  // Only now, with the new catalog live, drop shards of vanished sets.
+  await pruneShards(shards);
 }
 
-async function uploadShards() {
-  const bucket = getBucket();
-  const local = listLocalShards();
+
+/**
+ * Uploads the shards the bucket lacks or holds different content for (see
+ * planShardUploads). Everything the S3 side needs is injectable, for tests.
+ * Throws on the first failed upload -- after the manifest has been saved with
+ * the shards that did succeed -- so the caller never goes on to publish a
+ * catalog.json that refers to a missing shard.
+ *
+ * @returns {Promise<{local: object[], remote: Map, uploaded: number}>}
+ */
+async function uploadShards({
+  bucket = getBucket(),
+  local = listLocalShards(),
+  listRemote = () => listObjects('details/'),
+  put = ({ key, filePath }) => putFile(key, filePath, { contentType: 'application/json', cacheControl: PUBLIC_CACHE_CONTROL }),
+  manifestPath = MANIFEST_PATH,
+  force = process.env[FORCE_SHARDS_ENV] === '1',
+  concurrency = SHARD_CONCURRENCY,
+} = {}) {
   if (local.length === 0) throw new Error(`No detail shards in ${DETAILS_DIR} -- run build-data.js first`);
-  const manifest = readManifest(MANIFEST_PATH, bucket);
-  const { toUpload, unchanged } = planShardUploads(local, manifest, { force: process.env[FORCE_SHARDS_ENV] === '1' });
+  const remote = await listRemote();
+  const manifest = readManifest(manifestPath, bucket);
+  const { toUpload, unchanged } = planShardUploads(local, remote, manifest, { force });
 
   // Forget shards that no longer exist locally (their sets are gone).
   const localKeys = new Set(local.map((s) => s.key));
@@ -223,26 +285,50 @@ async function uploadShards() {
   }
 
   let bytes = 0;
+  let uploaded = 0;
   try {
-    await runPool(toUpload, SHARD_CONCURRENCY, async ({ key, filePath, hash }) => {
-      const res = await putFile(key, filePath, { contentType: 'application/json', cacheControl: PUBLIC_CACHE_CONTROL });
+    await runPool(toUpload, concurrency, async (shard) => {
+      const res = await put(shard);
       bytes += res.bytes;
+      uploaded++;
       // Only now is this shard known to be in the bucket.
-      manifest.shards[key] = hash;
+      manifest.shards[shard.key] = { hash: shard.hash, etag: normalizeEtag(res.etag) };
     });
   } finally {
     // Saved even when a later shard failed, so the next run only redoes
-    // what's still missing. (A failed save just means re-uploading some.)
+    // what's still missing. (A failed save just costs some re-uploads.)
     try {
-      writeFileAtomic(MANIFEST_PATH, JSON.stringify(manifest));
+      writeFileAtomic(manifestPath, JSON.stringify(manifest));
     } catch (err) {
-      console.warn(`[upload-cards] Couldn't save ${MANIFEST_PATH} (${err.message}); the next run re-uploads shards.`);
+      console.warn(`[upload-cards] Couldn't save ${manifestPath} (${err.message}).`);
     }
   }
   console.log(
-    `Uploaded ${toUpload.length} of ${local.length} detail shards (${(bytes / (1024 * 1024)).toFixed(2)} MB; ` +
-    `${unchanged} unchanged)`
+    `Uploaded ${uploaded} of ${local.length} detail shards (${(bytes / (1024 * 1024)).toFixed(2)} MB; ` +
+    `${unchanged} already in the bucket)`
   );
+  return { local, remote, uploaded };
+}
+
+/**
+ * Deletes remote shards of sets that no longer exist. Run only after the new
+ * catalog.json is up, so the live catalog never refers to a deleted shard; a
+ * failure here is only a warning (the leftovers are harmless).
+ */
+async function pruneShards({ local, remote, remove = deleteObject } = {}) {
+  const { orphans, reason } = planShardPrune(local, remote);
+  if (reason) console.warn(`[upload-cards] ${reason}.`);
+  let deleted = 0;
+  for (const key of orphans) {
+    try {
+      await remove(key);
+      deleted++;
+    } catch (err) {
+      console.warn(`[upload-cards] Couldn't delete orphaned ${key} (${err.message}); it will be retried next run.`);
+    }
+  }
+  if (orphans.length > 0) console.log(`Deleted ${deleted} of ${orphans.length} orphaned remote shards.`);
+  return deleted;
 }
 
 if (require.main === module) {
@@ -257,6 +343,9 @@ module.exports = {
   MIN_HISTORY_SHARE,
   readManifest,
   planShardUploads,
+  planShardPrune,
+  uploadShards,
+  pruneShards,
   listLocalShards,
   runPool,
   OBJECTS,
