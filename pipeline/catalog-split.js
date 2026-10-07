@@ -5,7 +5,8 @@
  * up front and what it only needs when a card is opened:
  *
  *  - catalog.json         slim cards for the grid, search, filters and
- *                         Market Movers (~5 MB raw, ~0.5 MB brotli)
+ *                         Market Movers, incl. each card's nation code
+ *                         (~6 MB raw, ~0.5 MB brotli)
  *  - details/<slug>.json  one file per set: card id -> the heavy per-card
  *                         fields (skill text, flavor, stat line, wiki
  *                         title), fetched when a card of that set is opened
@@ -28,6 +29,7 @@
 const fs = require('fs');
 const path = require('path');
 const { writeFileAtomic } = require('./fs-atomic');
+const { NATIONS, nationOf } = require('./nation');
 
 // Fields that only the card modal shows. translationSource is deliberately
 // NOT here: Market Movers ranks a group's representative printing by it, and
@@ -64,6 +66,11 @@ function slimCard(card) {
     stock: card.stock,
   };
   if (card.chg7d) slim.chg7d = card.chg7d;
+  // Market Movers filters by nation. The clan it's derived from stays in the
+  // shard; this is a 2-letter code (an array for a multi-nation card),
+  // omitted when the card has none.
+  const nation = nationOf(card.clan);
+  if (nation) slim.nation = nation;
   // `!==` against the derivation, not truthiness: an explicit null (a URL the
   // allowlist rejected) must survive as null rather than be re-derived.
   if (card.imageUrl !== derivedImageUrl(card.id)) slim.imageUrl = card.imageUrl;
@@ -78,6 +85,8 @@ function buildSlimCatalog(cards, { generatedAt }) {
     v: CATALOG_FORMAT_VERSION,
     generatedAt,
     count: cards.length,
+    // code -> label/group for the cards' nation codes, in display order.
+    nations: NATIONS,
     cards: cards.map(slimCard),
   };
 }

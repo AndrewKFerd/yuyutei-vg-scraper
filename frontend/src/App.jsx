@@ -63,13 +63,16 @@ function sortCards(cards, sort) {
 
 // Shareable URL state, no router dependency: ?card=<id> opens that card's
 // modal (once the catalog has loaded), ?view=movers selects the Market
-// Movers tab and &w=24h|30d its window (the 7d default is left out).
+// Movers tab, &w=24h|30d its window (the 7d default is left out) and
+// &nation=<code> its nation filter (checked against the catalog's list once
+// it has loaded).
 function readUrlState() {
   const params = new URLSearchParams(window.location.search)
   const w = params.get('w')
   return {
     view: params.get('view') === 'movers' ? 'movers' : 'search',
     moversWindow: MOVER_WINDOWS.includes(w) ? w : DEFAULT_MOVER_WINDOW,
+    moversNation: params.get('nation') || '',
     cardId: params.get('card') || null,
   }
 }
@@ -129,6 +132,9 @@ function App() {
   const [view, setView] = useState(initialUrl.view) // 'search' | 'movers'
   const [moversWindow, setMoversWindow] = useState(initialUrl.moversWindow)
   const [minPrice, setMinPrice] = useState(DEFAULT_MIN_PRICE)
+  const [moversNation, setMoversNation] = useState(initialUrl.moversNation) // '' = all nations
+  // [{code, label, group}] from the catalog; empty for one that predates it.
+  const [nations, setNations] = useState([])
   // A ?card= deep link waits here until the catalog has loaded.
   const pendingCardIdRef = useRef(initialUrl.cardId)
   // Bumped after a manual refresh (which also drops the history/movers
@@ -163,6 +169,7 @@ function App() {
       .then((data) => {
         if (cancelled) return
         setCards(data.cards)
+        setNations(Array.isArray(data.nations) ? data.nations : [])
         setMeta({ generatedAt: data.generatedAt, count: data.count, fromCache: data.fromCache })
         // Open a deep-linked card in the same render the grid appears in
         // (unknown ids are just ignored).
@@ -195,6 +202,7 @@ function App() {
     refreshCatalog()
       .then((data) => {
         setCards(data.cards)
+        setNations(Array.isArray(data.nations) ? data.nations : [])
         setMeta({ generatedAt: data.generatedAt, count: data.count, fromCache: data.fromCache })
         // The card modal can trigger this ("newer data than your cached
         // catalog"): swap the open card for its fresh copy so the modal
@@ -216,6 +224,8 @@ function App() {
     else params.delete('view')
     if (view === 'movers' && moversWindow !== DEFAULT_MOVER_WINDOW) params.set('w', moversWindow)
     else params.delete('w')
+    if (view === 'movers' && moversNation) params.set('nation', moversNation)
+    else params.delete('nation')
     if (selectedCard) params.set('card', selectedCard.id)
     else if (status !== 'loading') params.delete('card')
     // "/" is legal in a query string; leaving it unescaped keeps shared
@@ -226,7 +236,13 @@ function App() {
     if (next !== `${pathname}${search}${hash}`) {
       window.history.replaceState(window.history.state, '', next)
     }
-  }, [view, moversWindow, selectedCard, status])
+  }, [view, moversWindow, moversNation, selectedCard, status])
+
+  // A ?nation= the loaded catalog doesn't know (a typo'd link, or a catalog
+  // that predates the filter) would otherwise empty every Movers list.
+  useEffect(() => {
+    if (status === 'ready' && moversNation && !nations.some((n) => n.code === moversNation)) setMoversNation('')
+  }, [status, nations, moversNation])
 
   // Fetch JPY exchange rates once on mount, independent of the catalog load
   // (currency defaults to JPY so this never blocks anything — it just makes
@@ -462,6 +478,9 @@ function App() {
             onWindowChange={setMoversWindow}
             minPrice={minPrice}
             onMinPriceChange={setMinPrice}
+            nations={nations}
+            nation={moversNation}
+            onNationChange={setMoversNation}
             onSelect={setSelectedCard}
           />
         )}

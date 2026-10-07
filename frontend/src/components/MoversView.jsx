@@ -41,6 +41,13 @@ function isBetterRepresentative(a, b) {
 
 const yenDisplay = (price) => `¥${price.toLocaleString('en-US')}`
 
+// card.nation is a code ('KS'), an array of codes for a multi-nation card,
+// or absent (see pipeline/nation.js). '' = all nations.
+function inNation(card, nation) {
+  if (!nation) return true
+  return Array.isArray(card.nation) ? card.nation.includes(nation) : card.nation === nation
+}
+
 // Tiles show the movers-side price/stock, not the catalog's: the catalog is
 // cached for up to a day while movers/history refresh every 30 minutes, so
 // a returning visitor's catalog can say "¥500, 1 in stock" for a card this
@@ -75,13 +82,13 @@ function printingsLabel(extra) {
  * (same groupKey) that moved identically (same from -> to) collapse into one
  * tile -- a reprint wave otherwise fills the list with the same art.
  */
-function priceTiles(entries, direction, { cardsById, minPrice, period, currency, rates, history }) {
+function priceTiles(entries, direction, { cardsById, minPrice, nation, period, currency, rates, history }) {
   const groups = new Map()
   for (const entry of entries) {
     if (direction === 'up' ? entry.to <= entry.from : entry.to >= entry.from) continue
     if (Math.max(entry.from, entry.to) < minPrice) continue
     const card = cardsById.get(entry.id)
-    if (!card) continue
+    if (!card || !inNation(card, nation)) continue
     const key = `${entry.g}\u0000${entry.from}\u0000${entry.to}`
     const group = groups.get(key)
     if (group) group.members.push(card)
@@ -115,11 +122,11 @@ function priceTiles(entries, direction, { cardsById, minPrice, period, currency,
 // stock (soldOut entries carry none: it's 0 by definition). No delta chip
 // (null): the card's own 7-day chip would be misleading next to a 24h or
 // 30d window.
-function stockTiles(entries, captionFor, stockOf, { cardsById, minPrice }) {
+function stockTiles(entries, captionFor, stockOf, { cardsById, minPrice, nation }) {
   const tiles = []
   for (const entry of entries) {
     const card = cardsById.get(entry.id)
-    if (!card) continue
+    if (!card || !inNation(card, nation)) continue
     const price = entry.price ?? card.price
     if (price < minPrice) continue
     tiles.push({ card: withCurrent(card, price, stockOf(entry, card)), delta: null, caption: captionFor(entry) })
@@ -213,6 +220,9 @@ function MoversView({
   onWindowChange,
   minPrice,
   onMinPriceChange,
+  nations,
+  nation,
+  onNationChange,
   onSelect,
 }) {
   // movers: undefined = loading, null = not published yet (404), else the
@@ -267,7 +277,7 @@ function MoversView({
 
   const sections = useMemo(() => {
     if (!win || !catalogReady) return null
-    const ctx = { cardsById, minPrice, period: windowPeriod(windowKey), currency, rates, history }
+    const ctx = { cardsById, minPrice, nation, period: windowPeriod(windowKey), currency, rates, history }
     const priceChanges = Array.isArray(win.priceChanges) ? win.priceChanges : []
     const list = (key) => (Array.isArray(win[key]) ? win[key] : [])
     // Until history arrives, coverage is undefined and times read "seen
@@ -280,7 +290,23 @@ function MoversView({
       restocked: stockTiles(list('restocked'), (e) => `Restocked · ${describeObservedAt(e.at, cov)}`, ENTRY_STOCK, ctx),
       sellingFast: stockTiles(list('sellingFast'), (e) => `Sold ${e.sold}`, ENTRY_STOCK, ctx),
     }
-  }, [win, catalogReady, cardsById, minPrice, windowKey, currency, rates, history])
+  }, [win, catalogReady, cardsById, minPrice, nation, windowKey, currency, rates, history])
+
+  // The catalog's nation list, narrowed to nations some card actually
+  // carries and grouped for the dropdown's <optgroup>s, in list order.
+  const nationGroups = useMemo(() => {
+    const present = new Set()
+    for (const card of cardsById.values()) {
+      for (const code of [card.nation].flat()) if (code) present.add(code)
+    }
+    const groups = new Map()
+    for (const n of nations) {
+      if (!present.has(n.code)) continue
+      if (!groups.has(n.group)) groups.set(n.group, [])
+      groups.get(n.group).push(n)
+    }
+    return [...groups]
+  }, [nations, cardsById])
 
   // If the window starts inside a stretch with no observations, the first
   // run after it may have caught changes from before the window began --
@@ -292,7 +318,7 @@ function MoversView({
 
   return (
     <div className="pb-10">
-      <div className="mx-auto mt-3 flex max-w-2xl flex-wrap items-center justify-center gap-2 px-4">
+      <div className="mx-auto mt-3 flex max-w-3xl flex-wrap items-center justify-center gap-2 px-4">
         <div
           role="group"
           aria-label="Time window"
@@ -326,6 +352,25 @@ function MoversView({
             </option>
           ))}
         </select>
+        {nationGroups.length > 0 && (
+          <select
+            value={nation}
+            onChange={(e) => onNationChange(e.target.value)}
+            aria-label="Nation"
+            className={selectClass}
+          >
+            <option value="">All nations</option>
+            {nationGroups.map(([group, list]) => (
+              <optgroup key={group} label={group}>
+                {list.map((n) => (
+                  <option key={n.code} value={n.code}>
+                    {n.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        )}
         <CurrencySelector value={currency} onChange={onCurrencyChange} />
       </div>
 
@@ -381,8 +426,8 @@ function MoversView({
           {Object.keys(SECTION_META).map((key) => (
             <MoversSection
               // Keyed on the filters too, so "Show all" collapses again
-              // when the window or price floor changes.
-              key={`${key}-${windowKey}-${minPrice}`}
+              // when the window, price floor or nation changes.
+              key={`${key}-${windowKey}-${minPrice}-${nation}`}
               sectionKey={key}
               tiles={sections[key]}
               currency={currency}

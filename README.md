@@ -37,7 +37,9 @@ load ran the function and pulled 30 MB out of Supabase. `build-data.js` now
 also writes:
 
 - `catalog.json` — the slim catalog the grid, search, filters and Market Movers
-  use (id, set, rarity, names, translationSource, price, stock, chg7d; ~6 MB raw,
+  use (id, set, rarity, names, translationSource, price, stock, chg7d, and a
+  `nation` code for the Market Movers nation filter -- see `pipeline/nation.js`,
+  which maps D-era nations and classic clans to nations; ~6 MB raw,
   ~0.6 MB brotli). `imageUrl`, `detailUrl` and `priceDisplay` are left out when
   they follow from the id / price (the client recomputes them,
   `frontend/src/catalogFormat.js`) and kept only where they differ.

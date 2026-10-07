@@ -184,9 +184,17 @@ export async function dropLegacyCatalogCache() {
 // is invalid, so it's neither cached nor trusted.
 export const CATALOG_FORMAT_VERSION = 1
 
+// A catalog without the `nations` list predates the Market Movers nation
+// filter. It still loads, but counts as invalid so it's never cached and a
+// cached one is re-fetched -- otherwise a returning visitor would go a whole
+// day without the filter.
 function isValidCatalog(data) {
   return (
-    Boolean(data) && data.v === CATALOG_FORMAT_VERSION && Array.isArray(data.cards) && data.cards.length > 0
+    Boolean(data) &&
+    data.v === CATALOG_FORMAT_VERSION &&
+    Array.isArray(data.cards) &&
+    data.cards.length > 0 &&
+    Array.isArray(data.nations)
   )
 }
 

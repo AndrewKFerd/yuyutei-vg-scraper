@@ -56,7 +56,13 @@ describe('slimCard', () => {
       translationSource: 'official',
       price: 59800,
       stock: 0,
+      nation: 'KS',
     });
+  });
+
+  it('omits nation for a card with no recognizable one', () => {
+    assert.equal('nation' in slimCard(card({ clan: '-' })), false);
+    assert.equal('nation' in slimCard(card({ clan: null })), false);
   });
 
   it('keeps chg7d, and keeps a field explicitly when it differs from the derivation (including null)', () => {
