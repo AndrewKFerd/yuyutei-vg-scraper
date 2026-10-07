@@ -88,6 +88,9 @@ $lockFile = Join-Path $pipelineDir 'refresh.lock'
 # Only a lock in the old timestamp-only format is judged by age, using this
 # many minutes.
 $staleLockMinutes = 25
+# A run that is still alive after this long is presumed hung (a normal run is
+# ~12 min; even the first cf-vanguard scrape of a day is ~25).
+$maxLockMinutes = 180
 # refresh.log grows ~1 MB a week at 48 runs/day; past this size it's moved
 # to refresh.old.log (replacing the previous one), so at most ~2x this is
 # kept. Both names match .gitignore's *.log.
@@ -122,43 +125,49 @@ function Invoke-Native($label, $exe, $exeArgs) {
     return $output
 }
 
-# The lock records who holds it: "pid=<n> start=<process start, UTC, to the
-# second> time=<when written>". The PID alone isn't enough (Windows reuses
-# them), so the process start time is checked too. A lock whose owner is
-# still running is honoured however old it is -- a run that slept mid-scrape
-# and woke up is alive and will carry on, so taking its lock over would put
-# two runs on price-history.json. Only a lock whose owner is gone is stale.
-# A lock in the old format (just a timestamp) has no owner to check and falls
-# back to the age rule.
-function Get-ProcessStamp($processId) {
-    try {
-        $p = [System.Diagnostics.Process]::GetProcessById([int]$processId)
-        return $p.StartTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss')
-    } catch {
-        return $null    # no such process (or not inspectable)
-    }
-}
+# The lock records who holds it ("pid=<n> start=<process start as a FILETIME>
+# time=<when written>"); refresh-lock.ps1 holds the decision logic and its
+# header explains the formats. In short:
+#  - owner alive (same PID AND same start time): skip, however old the lock.
+#    A run that slept mid-scrape and woke up is alive and will carry on, and
+#    taking its lock would put two runs on price-history.json.
+#  - owner gone (no such PID, or the PID was reused by another process):
+#    take over.
+#  - owner exists but its start time can't be read (an elevated process seen
+#    from a normal shell): treated as alive, never as gone.
+#  - ceiling, so a hung run can't block every future run forever: an owner
+#    that is verifiably still the lock's owner after $maxLockMinutes is
+#    presumed hung; it and its child processes are killed (taskkill /T /F)
+#    and the lock is taken over. An owner that can't be verified is not
+#    killed (the PID could belong to anything), only its lock is taken over.
+#  - old timestamp-only lock: no owner to ask, so the $staleLockMinutes age
+#    rule applies.
+# Backstop outside this script: set the Task Scheduler task to "If the task is
+# already running: Do not start a new instance" and "Stop the task if it runs
+# longer than 2 hours" (see README).
+# (Dot-sourcing a path containing "[Main-Main]" fails on the wildcard parse,
+# so the file is read with .NET IO and dot-sourced as a scriptblock.)
+. ([scriptblock]::Create([System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'refresh-lock.ps1'))))
 
+$lockText = $null
+$ageMinutes = 0
 if (Test-Path -LiteralPath $lockFile) {
     $ageMinutes = ((Get-Date) - (Get-Item -LiteralPath $lockFile).LastWriteTime).TotalMinutes
     $lockText = ''
     try { $lockText = [System.IO.File]::ReadAllText($lockFile) } catch { }
-    if ($lockText -match 'pid=(\d+) start=(\S+)') {
-        $ownerStamp = Get-ProcessStamp $Matches[1]
-        if ($ownerStamp -and $ownerStamp -eq $Matches[2]) {
-            Log "Another refresh is still running (pid $($Matches[1]), lock is $([int]$ageMinutes) min old). Skipping this run."
-            exit 0
-        }
-        Log "Stale lock found (pid $($Matches[1]) is no longer running, lock is $([int]$ageMinutes) min old) -- taking over."
-    } elseif ($ageMinutes -lt $staleLockMinutes) {
-        Log "Another refresh appears to be in progress (old-format lock, $([int]$ageMinutes) min old). Skipping this run."
-        exit 0
-    } else {
-        Log "Stale lock found ($([int]$ageMinutes) min old, old format, a previous run likely crashed) -- taking over."
-    }
 }
-$ownStamp = Get-ProcessStamp $PID
-[System.IO.File]::WriteAllText($lockFile, "pid=$PID start=$ownStamp time=$((Get-Date).ToString('o'))")
+$decision = Get-LockDecision $lockText $ageMinutes $staleLockMinutes $maxLockMinutes $null
+if ($decision.Message) { Log $decision.Message }
+if ($decision.Action -eq 'skip') { exit 0 }
+if ($decision.Action -eq 'kill-takeover') {
+    $killOutput = & taskkill.exe /PID $decision.OwnerPid /T /F 2>&1 | Out-String
+    Log "taskkill: $($killOutput.Trim())"
+    Start-Sleep -Seconds 5
+}
+$ownState = Get-ProcessState $PID
+$ownStart = 0
+if ($ownState.State -eq 'alive') { $ownStart = $ownState.FileTime }
+[System.IO.File]::WriteAllText($lockFile, "pid=$PID start=$ownStart time=$((Get-Date).ToString('o'))")
 
 # Rotated only once the lock is ours, so a run that's about to be skipped
 # can't move the log out from under one that's still writing to it. A
