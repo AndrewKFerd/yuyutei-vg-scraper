@@ -27,6 +27,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { fetchWithTimeout } = require('./http-client');
 
 const API_URL = 'https://cardfight.fandom.com/api.php';
 const OUTPUT_PATH = path.join(__dirname, 'data', 'fandom-raw.json');
@@ -56,8 +57,8 @@ async function apiRequest(params, { post = false } = {}) {
     if (++requestsMade > MAX_REQUESTS) throw new Error(`Request ceiling (${MAX_REQUESTS}) reached`);
     try {
       const res = post
-        ? await fetch(API_URL, { method: 'POST', body, headers: { 'User-Agent': USER_AGENT } })
-        : await fetch(`${API_URL}?${body}`, { headers: { 'User-Agent': USER_AGENT } });
+        ? await fetchWithTimeout(API_URL, { method: 'POST', body, headers: { 'User-Agent': USER_AGENT } })
+        : await fetchWithTimeout(`${API_URL}?${body}`, { headers: { 'User-Agent': USER_AGENT } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (json.error) throw new Error(`API error ${json.error.code}: ${json.error.info}`);

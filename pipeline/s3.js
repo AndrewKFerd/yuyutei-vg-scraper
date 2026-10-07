@@ -12,6 +12,7 @@
  */
 
 const fs = require('fs');
+const { NodeHttpHandler } = require('@smithy/node-http-handler'); // the SDK's own transport (already installed with client-s3)
 const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 
 const ENV_VARS = [
@@ -35,6 +36,15 @@ function requireEnv(name) {
 function getBucket() {
   return requireEnv('SUPABASE_S3_BUCKET');
 }
+
+// Deadlines for the S3 calls. The SDK's defaults are "wait forever", so a
+// connection that dies silently (sleep, dropped Wi-Fi) would hang the run
+// like the cf-vanguard one did. requestTimeout is a socket *idle* timeout
+// (no bytes moving for that long), not a cap on the whole transfer, so the
+// ~30 MB cards.json upload is fine on any link that is actually making
+// progress; connectionTimeout covers establishing the TCP/TLS connection.
+const S3_CONNECTION_TIMEOUT_MS = 15 * 1000;
+const S3_REQUEST_TIMEOUT_MS = 120 * 1000;
 
 let client = null;
 

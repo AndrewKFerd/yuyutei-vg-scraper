@@ -24,6 +24,27 @@
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
+// Every network call gets a deadline. Without one, a connection that dies
+// silently (the machine sleeps mid-request, Wi-Fi drops) leaves fetch()
+// waiting forever: one refresh sat 18 hours inside a single cf-vanguard
+// request. The timeout covers the whole exchange including the body read
+// (the signal stays attached to the response stream), so a stalled body
+// aborts too. It surfaces as an ordinary Error, which every scraper's retry
+// loop already treats as a retryable failure.
+const REQUEST_TIMEOUT_MS = 30 * 1000;
+
+/** fetch() with a deadline; a timeout rejects with a clear "timed out after Ns" Error. */
+async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+  try {
+    return await fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (err) {
+    if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw new Error(`request timed out after ${Math.round(timeoutMs / 1000)}s`, { cause: err });
+    }
+    throw err;
+  }
+}
+
 /** A tiny cookie jar: absorbs Set-Cookie from responses, replays them on later requests. */
 function createCookieJar() {
   const jar = new Map();
@@ -81,10 +102,10 @@ function browserHeaders({ cookie, referer } = {}) {
  * the response. Throws on a non-OK status (caller handles retry logic).
  */
 async function browserGet(url, jar, referer) {
-  const res = await fetch(url, { headers: browserHeaders({ cookie: jar.header(), referer }) });
+  const res = await fetchWithTimeout(url, { headers: browserHeaders({ cookie: jar.header(), referer }) });
   jar.absorb(res);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res;
 }
 
-module.exports = { USER_AGENT, createCookieJar, browserHeaders, browserGet };
+module.exports = { REQUEST_TIMEOUT_MS, fetchWithTimeout, USER_AGENT, createCookieJar, browserHeaders, browserGet };
