@@ -160,9 +160,29 @@ $decision = Get-LockDecision $lockText $ageMinutes $staleLockMinutes $maxLockMin
 if ($decision.Message) { Log $decision.Message }
 if ($decision.Action -eq 'skip') { exit 0 }
 if ($decision.Action -eq 'kill-takeover') {
-    $killOutput = & taskkill.exe /PID $decision.OwnerPid /T /F 2>&1 | Out-String
-    Log "taskkill: $($killOutput.Trim())"
+    # Same treatment as Invoke-Native: taskkill writes ordinary messages (or a
+    # "process not found" for a child that already exited) to stderr, which
+    # under 'Stop' + 2>&1 would be a terminating error before the lock is ours.
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $killOutput = & taskkill.exe /PID $decision.OwnerPid /T /F 2>&1 | Out-String
+        $killExit = $LASTEXITCODE
+    } catch {
+        $killOutput = "$_"
+        $killExit = -1
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
+    Log "taskkill (exit $killExit): $($killOutput.Trim())"
     Start-Sleep -Seconds 5
+    # Never double-run: if the owner somehow survived, leave it to the next
+    # run (or the Task Scheduler stop-after-2-h backstop).
+    $afterKill = Get-ProcessState $decision.OwnerPid
+    if ($afterKill.State -ne 'gone') {
+        Log "ERROR: the hung run (pid $($decision.OwnerPid)) is still alive after taskkill. Not taking over the lock; skipping this run."
+        exit 0
+    }
 }
 $ownState = Get-ProcessState $PID
 $ownStart = 0
