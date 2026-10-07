@@ -37,8 +37,9 @@
  * for each upload, for a store whose ETags aren't MD5s (recorded only after
  * an upload succeeded, saved even if a later one fails; unusable = ignored).
  * FORCE_SHARD_UPLOAD=1 uploads every shard. Once the new catalog.json is up,
- * remote shards of sets that no longer exist are deleted (never more than a
- * fifth of them in one run).
+ * remote shards of sets that no longer exist are deleted -- but only after
+ * staying orphaned for 48 h (first-seen times live in the manifest; a missing
+ * manifest just starts the clocks), and never more than a fifth of them.
  *
  * The bucket's price-history.json is the one copy of the history that
  * outlives this machine, so it's never overwritten by a much smaller local
@@ -88,11 +89,15 @@ const md5 = (buffer) => crypto.createHash('md5').update(buffer).digest('hex');
  * unnecessary re-uploads.
  */
 function readManifest(filePath, bucket) {
-  const empty = { v: MANIFEST_VERSION, bucket, shards: {} };
+  const empty = { v: MANIFEST_VERSION, bucket, shards: {}, orphanedSince: {} };
   try {
     const m = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     if (m && m.v === MANIFEST_VERSION && m.bucket === bucket && m.shards && typeof m.shards === 'object') {
-      return { v: MANIFEST_VERSION, bucket, shards: { ...m.shards } };
+      // key -> ms timestamp the shard was first seen without a local set
+      // (see planShardPrune). Unlike the ETag cache this carries state that
+      // delays a deletion, so losing it only ever makes deletion later.
+      const orphanedSince = m.orphanedSince && typeof m.orphanedSince === 'object' ? { ...m.orphanedSince } : {};
+      return { v: MANIFEST_VERSION, bucket, shards: { ...m.shards }, orphanedSince };
     }
   } catch {
     // fall through
@@ -126,21 +131,41 @@ function planShardUploads(local, remote, manifest, { force = false } = {}) {
   return { toUpload, unchanged: local.length - toUpload.length };
 }
 
+// A shard of a vanished set is deleted only once it has stayed orphaned this
+// long. Visitors keep a catalog for up to a day, and a scrape that transiently
+// drops a small set would otherwise 404 their skill text (the 404 is also
+// edge-cached for 5 min); a set that comes back within the window is never
+// touched.
+const ORPHAN_GRACE_MS = 48 * 60 * 60 * 1000;
+
 /**
- * Remote shard keys that no local shard accounts for (their sets are gone).
- * Refuses (returns none, with a reason) if that would be more than a fifth
- * of the remote shards -- a half-built local details/ must not empty the bucket.
+ * Which remote shards to delete: those no local shard accounts for (their sets
+ * are gone) AND that have been orphaned for at least `minAgeMs`.
+ *
+ * @param {Object<string, number>} orphanedSince  key -> when first seen orphaned (ms), from the manifest
+ * @returns {{toDelete: string[], orphanedSince: Object<string, number>, reason: string|null}}
+ *   orphanedSince is the updated record: first-seen times kept, new orphans
+ *   stamped `now`, and keys that are no longer orphans (the set came back, or
+ *   the object is gone) cleared. Refuses to delete anything (reason set, record
+ *   still updated) if more than a fifth of the remote shards are orphaned -- a
+ *   half-built local details/ must not empty the bucket.
  */
-function planShardPrune(local, remote, { maxShare = 0.2 } = {}) {
+function planShardPrune(local, remote, orphanedSince = {}, { now = Date.now(), minAgeMs = ORPHAN_GRACE_MS, maxShare = 0.2 } = {}) {
   const localKeys = new Set(local.map((s) => s.key));
   const orphans = [...remote.keys()].filter((k) => /^details\/[a-z0-9-]+\.json$/.test(k) && !localKeys.has(k));
+  const record = {};
+  for (const key of orphans) {
+    const first = orphanedSince[key];
+    record[key] = Number.isFinite(first) && first <= now ? first : now;
+  }
   if (remote.size > 0 && orphans.length > remote.size * maxShare) {
     return {
-      orphans: [],
+      toDelete: [],
+      orphanedSince: record,
       reason: `${orphans.length} of ${remote.size} remote shards look orphaned (over ${Math.round(maxShare * 100)}%), not deleting`,
     };
   }
-  return { orphans, reason: null };
+  return { toDelete: orphans.filter((k) => now - record[k] >= minAgeMs), orphanedSince: record, reason: null };
 }
 
 /** Local shard files as [{ key: 'details/<slug>.json', filePath, hash }], sorted by key. */
@@ -307,27 +332,41 @@ async function uploadShards({
     `Uploaded ${uploaded} of ${local.length} detail shards (${(bytes / (1024 * 1024)).toFixed(2)} MB; ` +
     `${unchanged} already in the bucket)`
   );
-  return { local, remote, uploaded };
+  return { local, remote, uploaded, manifest, manifestPath };
 }
 
 /**
- * Deletes remote shards of sets that no longer exist. Run only after the new
- * catalog.json is up, so the live catalog never refers to a deleted shard; a
- * failure here is only a warning (the leftovers are harmless).
+ * Deletes remote shards of sets that no longer exist -- but only ones that
+ * have stayed orphaned for 48 h (see ORPHAN_GRACE_MS), tracked in the
+ * manifest's orphanedSince. Run only after the new catalog.json is up, so the
+ * live catalog never refers to a deleted shard; a failure here is only a
+ * warning (the leftovers are harmless). With no manifest yet nothing has a
+ * first-seen time, so the first run only records.
  */
-async function pruneShards({ local, remote, remove = deleteObject } = {}) {
-  const { orphans, reason } = planShardPrune(local, remote);
-  if (reason) console.warn(`[upload-cards] ${reason}.`);
+async function pruneShards({
+  local, remote, manifest, manifestPath = MANIFEST_PATH, remove = deleteObject, now = Date.now(),
+} = {}) {
+  const plan = planShardPrune(local, remote, manifest.orphanedSince, { now });
+  if (plan.reason) console.warn(`[upload-cards] ${plan.reason}.`);
+  manifest.orphanedSince = plan.orphanedSince;
   let deleted = 0;
-  for (const key of orphans) {
+  for (const key of plan.toDelete) {
     try {
       await remove(key);
       deleted++;
+      delete manifest.orphanedSince[key];
     } catch (err) {
       console.warn(`[upload-cards] Couldn't delete orphaned ${key} (${err.message}); it will be retried next run.`);
     }
   }
-  if (orphans.length > 0) console.log(`Deleted ${deleted} of ${orphans.length} orphaned remote shards.`);
+  const waiting = Object.keys(manifest.orphanedSince).length;
+  if (plan.toDelete.length > 0) console.log(`Deleted ${deleted} of ${plan.toDelete.length} orphaned remote shards.`);
+  if (waiting > 0) console.log(`${waiting} orphaned remote shard(s) waiting out the ${ORPHAN_GRACE_MS / 3600000} h grace period.`);
+  try {
+    writeFileAtomic(manifestPath, JSON.stringify(manifest));
+  } catch (err) {
+    console.warn(`[upload-cards] Couldn't save ${manifestPath} (${err.message}).`);
+  }
   return deleted;
 }
 
@@ -344,6 +383,7 @@ module.exports = {
   readManifest,
   planShardUploads,
   planShardPrune,
+  ORPHAN_GRACE_MS,
   uploadShards,
   pruneShards,
   listLocalShards,

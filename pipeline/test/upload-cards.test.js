@@ -71,7 +71,7 @@ describe('upload order', () => {
 describe('shard manifest (a cache of upload ETags)', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'manifest-'));
   const file = path.join(tmp, 'm.json');
-  const good = { v: 2, bucket: 'b', shards: { 'details/a.json': { hash: 'h1', etag: 'e1' } } };
+  const good = { v: 2, bucket: 'b', shards: { 'details/a.json': { hash: 'h1', etag: 'e1' } }, orphanedSince: { 'details/o.json': 123 } };
 
   it('reads a valid manifest for the same bucket', () => {
     fs.writeFileSync(file, JSON.stringify(good));
@@ -79,7 +79,7 @@ describe('shard manifest (a cache of upload ETags)', () => {
   });
 
   it('treats a missing, corrupt, other-bucket or old-version manifest as empty', () => {
-    const empty = { v: 2, bucket: 'b', shards: {} };
+    const empty = { v: 2, bucket: 'b', shards: {}, orphanedSince: {} };
     assert.deepEqual(readManifest(path.join(tmp, 'nope.json'), 'b'), empty);
     fs.writeFileSync(file, '{"v":2,"bucket":');
     assert.deepEqual(readManifest(file, 'b'), empty);
@@ -131,25 +131,6 @@ describe('planShardUploads (the bucket decides, the manifest is a hint)', () => 
   it('uploads everything when forced, and when a remote entry has no ETag', () => {
     assert.equal(planShardUploads([a, b], remoteOf([[a.key, a.md5], [b.key, b.md5]]), empty, { force: true }).toUpload.length, 2);
     assert.equal(planShardUploads([a], remoteOf([[a.key, null]]), empty).toUpload.length, 1);
-  });
-});
-
-describe('planShardPrune', () => {
-  const local = ['a', 'b', 'c', 'd', 'e'].map((n) => shard(n, n));
-  const keys = local.map((s) => s.key);
-
-  it('lists remote shards no local set accounts for, and ignores everything outside details/', () => {
-    const remote = remoteOf([...keys.map((k) => [k, 'x']), ['details/gone.json', 'x'], ['cards.json', 'x'], ['details/Bad_Name.json', 'x']]);
-    const { orphans, reason } = planShardPrune(local, remote);
-    assert.deepEqual(orphans, ['details/gone.json']);
-    assert.equal(reason, null);
-  });
-
-  it('refuses a mass deletion (a half-built local details/ must not empty the bucket)', () => {
-    const remote = remoteOf([...keys, 'details/x1.json', 'details/x2.json', 'details/x3.json'].map((k) => [k, 'x']));
-    const { orphans, reason } = planShardPrune(local.slice(0, 2), remote);
-    assert.deepEqual(orphans, []);
-    assert.match(reason, /not deleting/);
   });
 });
 
@@ -210,27 +191,105 @@ describe('uploadShards / pruneShards with a mocked bucket', () => {
     await assert.rejects(uploadShards({ bucket: 'b', local: [], manifestPath, listRemote: async () => remoteOf([]) }), /No detail shards/);
   });
 
-  it('prunes orphaned remote shards, tolerating a failed delete', async () => {
-    const remote = remoteOf([...shards.map((s) => [s.key, 'x']), ['details/old1.json', 'x'], ['details/old2.json', 'x']]);
-    // 2 of 6 is over the 20% cap, so give it enough company
-    const many = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'].map((n) => shard(n, n));
-    const remoteMany = remoteOf([...many.map((s) => [s.key, 'x']), ['details/old1.json', 'x']]);
+  // 10 live sets plus one orphan stays under the 20% guard.
+  const many = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'].map((n) => shard(n, n));
+  const withOrphan = (...orphans) => remoteOf([...many.map((s) => [s.key, 'x']), ...orphans.map((k) => [k, 'x'])]);
+  const HOUR = 3600 * 1000;
+  const T0 = Date.UTC(2026, 9, 1);
+  const freshManifest = () => ({ v: 2, bucket: 'b', shards: {}, orphanedSince: {} });
+
+  it('first sees an orphan: records it, deletes nothing (also what a missing manifest means)', async () => {
     const removed = [];
+    const manifest = freshManifest();
     const deleted = await quiet(() => pruneShards({
-      local: many, remote: remoteMany,
+      local: many, remote: withOrphan('details/old1.json'), manifest, manifestPath, now: T0,
       remove: async (k) => { removed.push(k); },
     }));
-    assert.equal(deleted, 1);
+    assert.equal(deleted, 0);
+    assert.deepEqual(removed, []);
+    assert.deepEqual(manifest.orphanedSince, { 'details/old1.json': T0 });
+    // and it was persisted
+    assert.deepEqual(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).orphanedSince, { 'details/old1.json': T0 });
+  });
+
+  it('keeps an orphan until it has been orphaned for 48 h, then deletes it', async () => {
+    const removed = [];
+    const manifest = { ...freshManifest(), orphanedSince: { 'details/old1.json': T0 } };
+    const run = (now) => quiet(() => pruneShards({
+      local: many, remote: withOrphan('details/old1.json'), manifest, manifestPath, now,
+      remove: async (k) => { removed.push(k); },
+    }));
+    assert.equal(await run(T0 + 47 * HOUR), 0);
+    assert.deepEqual(removed, []);
+    assert.equal(await run(T0 + 48 * HOUR), 1);
     assert.deepEqual(removed, ['details/old1.json']);
-    // a delete that throws is only a warning
+    assert.deepEqual(manifest.orphanedSince, {}); // forgotten once deleted
+  });
+
+  it('clears the record when the set comes back, so a later orphaning starts a new 48 h clock', async () => {
+    const removed = [];
+    const manifest = { ...freshManifest(), orphanedSince: { 'details/old1.json': T0 } };
+    const back = shard('old1', 'old1');
+    // the set is back in the local build
+    await quiet(() => pruneShards({
+      local: [...many, back], remote: withOrphan('details/old1.json'), manifest, manifestPath, now: T0 + 60 * HOUR,
+      remove: async (k) => { removed.push(k); },
+    }));
+    assert.deepEqual(removed, []);
+    assert.deepEqual(manifest.orphanedSince, {});
+    // dropped again later: the clock restarts
+    await quiet(() => pruneShards({
+      local: many, remote: withOrphan('details/old1.json'), manifest, manifestPath, now: T0 + 70 * HOUR,
+      remove: async (k) => { removed.push(k); },
+    }));
+    assert.deepEqual(removed, []);
+    assert.deepEqual(manifest.orphanedSince, { 'details/old1.json': T0 + 70 * HOUR });
+  });
+
+  it('tolerates a failed delete (retried next run) and still honours the 20% guard', async () => {
+    const manifest = { ...freshManifest(), orphanedSince: { 'details/old1.json': T0 } };
     const none = await quiet(() => pruneShards({
-      local: many, remote: remoteMany, remove: async () => { throw new Error('denied'); },
+      local: many, remote: withOrphan('details/old1.json'), manifest, manifestPath, now: T0 + 72 * HOUR,
+      remove: async () => { throw new Error('denied'); },
     }));
     assert.equal(none, 0);
-    // over the cap: nothing is deleted at all
+    assert.equal(manifest.orphanedSince['details/old1.json'], T0); // still due
+    // over the cap: nothing is deleted however old, but the record is kept
     const kept = [];
-    await quiet(() => pruneShards({ local: shards, remote, remove: async (k) => { kept.push(k); } }));
+    const old = { ...freshManifest(), orphanedSince: { 'details/o1.json': T0, 'details/o2.json': T0, 'details/o3.json': T0 } };
+    await quiet(() => pruneShards({
+      local: many.slice(0, 5), remote: withOrphan('details/o1.json', 'details/o2.json', 'details/o3.json'),
+      manifest: old, manifestPath, now: T0 + 100 * HOUR, remove: async (k) => { kept.push(k); },
+    }));
     assert.deepEqual(kept, []);
+  });
+});
+
+describe('planShardPrune', () => {
+  const local = ['a', 'b', 'c', 'd', 'e'].map((n) => shard(n, n));
+  const keys = local.map((s) => s.key);
+  const T0 = 1_000_000;
+
+  it('ignores everything outside details/ and stamps new orphans with now', () => {
+    const remote = remoteOf([...keys.map((k) => [k, 'x']), ['details/gone.json', 'x'], ['cards.json', 'x'], ['details/Bad_Name.json', 'x']]);
+    const plan = planShardPrune(local, remote, {}, { now: T0 });
+    assert.deepEqual(plan.orphanedSince, { 'details/gone.json': T0 });
+    assert.deepEqual(plan.toDelete, []);
+    assert.equal(plan.reason, null);
+  });
+
+  it('keeps an earlier first-seen time and drops keys that are no longer orphans', () => {
+    const remote = remoteOf([...keys.map((k) => [k, 'x']), ['details/gone.json', 'x']]);
+    const plan = planShardPrune(local, remote, { 'details/gone.json': 5, 'details/vanished.json': 5 }, { now: T0, minAgeMs: 10 });
+    assert.deepEqual(plan.orphanedSince, { 'details/gone.json': 5 });
+    assert.deepEqual(plan.toDelete, ['details/gone.json']);
+  });
+
+  it('refuses a mass deletion (a half-built local details/ must not empty the bucket)', () => {
+    const remote = remoteOf([...keys, 'details/x1.json', 'details/x2.json', 'details/x3.json'].map((k) => [k, 'x']));
+    const plan = planShardPrune(local.slice(0, 2), remote, { 'details/x1.json': 0 }, { now: T0 });
+    assert.deepEqual(plan.toDelete, []);
+    assert.match(plan.reason, /not deleting/);
   });
 });
 

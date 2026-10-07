@@ -45,7 +45,7 @@ also writes:
   (skill text, flavor, kind/clan/grade/power/shield, wiki title), fetched by the
   card modal when it opens a card of that set.
 
-`upload-cards.js` uploads the shards first, then `catalog.json`, so the catalog never refers to a shard the bucket lacks. Each run lists `details/` in the bucket and uploads only shards that are missing there or whose ETag differs from the local content's MD5, so a bucket changed or emptied elsewhere heals itself (`data/upload-manifest.json` only caches the ETags the bucket returned, for a store whose ETags are not MD5s; `FORCE_SHARD_UPLOAD=1` sends them all). After the new `catalog.json` is up, remote shards of sets that no longer exist are deleted (at most a fifth of them per run).
+`upload-cards.js` uploads the shards first, then `catalog.json`, so the catalog never refers to a shard the bucket lacks. Each run lists `details/` in the bucket and uploads only shards that are missing there or whose ETag differs from the local content's MD5, so a bucket changed or emptied elsewhere heals itself (`data/upload-manifest.json` only caches the ETags the bucket returned, for a store whose ETags are not MD5s; `FORCE_SHARD_UPLOAD=1` sends them all). After the new `catalog.json` is up, remote shards of sets that no longer exist are deleted, but only after staying orphaned for 48 h (first-seen times are kept in the manifest, so visitors holding a day-old catalog never hit a deleted shard, and a set that reappears is left alone) and never more than a fifth of them per run.
 
 **Transition:** the pipeline uploads independently of Vercel deploys, so the
 frontend already deployed still loads `cards.json` via `/api/cards`. Both files
