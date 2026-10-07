@@ -12,6 +12,9 @@
  *   --series D,DZ,V,G,OLD   which series to keep (default: all). Series are
  *                           read off the card-code prefix, see fandom-series.js.
  *                           Without D/DZ the {{DTable}} listing isn't walked.
+ *                           A subset is MERGED into the existing output file:
+ *                           pages of the other series stay, only the selected
+ *                           series are replaced (mergeScrapes).
  *   --limit <n>             stop after n listing batches (50 pages each) per
  *                           template -- for trying a change out. Requires --out
  *                           so a partial scrape can't replace the real file.
@@ -36,10 +39,13 @@
  * changes slowly, so run this by hand occasionally, then build-data.js.
  */
 
+const fs = require('fs');
 const path = require('path');
 const { fetchWithTimeout } = require('./http-client');
 const { writeFileAtomic } = require('./fs-atomic');
-const { ALL_SERIES, CARD_CODE_RE, FOREIGN_CODE_RE, seriesOfCode, parseSeries } = require('./fandom-series');
+const {
+  ALL_SERIES, CARD_CODE_RE, FOREIGN_CODE_RE, seriesOfCode, familyOfSeries, parseSeries, LEGACY_SERIES,
+} = require('./fandom-series');
 
 const API_URL = 'https://cardfight.fandom.com/api.php';
 const OUTPUT_PATH = path.join(__dirname, 'data', 'fandom-raw.json');
@@ -183,6 +189,10 @@ function pageToCard(page, series, templateSeries = null) {
     nameEn: wikitextToPlain(fields.name) || page.title.replace(/\s*\([^()]*\)$/, ''),
     kanji,
     codes,
+    // The series family of the template the page came from ({{DTable}} ->
+    // 'D'), kept for pages that list no codes: it is all that lets
+    // match-fandom.js match them by name within the right era.
+    ...(templateSeries ? { family: familyOfSeries(templateSeries[0]) } : {}),
     grade: toNumber(fields.grade),
     power: toNumber(fields.power),
     shield: toNumber(fields.shield),
@@ -232,6 +242,37 @@ async function expandEffects(cards) {
     c.effect ??= null;
     delete c.rawEffect;
   }
+}
+
+/**
+ * Folds a scrape of some series into an earlier fandom-raw.json, replacing
+ * only those series:
+ *  - a page scraped now replaces the old copy of the same page, but keeps the
+ *    old copy's codes of series that weren't scraped (a card printed in both
+ *    D- and V- sets must not lose its D- codes when only V is rescraped);
+ *  - an old page not scraped now is kept if it belongs to a series that
+ *    wasn't scraped (any code outside the scraped series, or, with no codes,
+ *    the family it came from), and dropped otherwise (it has left the wiki).
+ * An old file with no `series` field was a D/DZ-only scrape.
+ *
+ * @returns {{series: string[], cards: object[]}}
+ */
+function mergeScrapes(existing, scrapedCards, scrapedSeries) {
+  const oldSeries = existing.series || LEGACY_SERIES;
+  const familyScraped = (family) => scrapedSeries.some((s) => familyOfSeries(s) === family);
+  const byTitle = new Map();
+  for (const old of existing.cards || []) {
+    const otherCodes = (old.codes || []).filter((c) => !scrapedSeries.includes(seriesOfCode(c)));
+    const family = old.family || (old.codes?.length ? null : familyOfSeries(LEGACY_SERIES[0]));
+    const codelessOfOtherFamily = (old.codes || []).length === 0 && family && !familyScraped(family);
+    if (otherCodes.length > 0 || codelessOfOtherFamily) byTitle.set(old.title, { ...old, codes: otherCodes });
+  }
+  for (const page of scrapedCards) {
+    const prior = byTitle.get(page.title);
+    byTitle.set(page.title, prior ? { ...page, codes: [...new Set([...page.codes, ...prior.codes])] } : page);
+  }
+  const series = ALL_SERIES.filter((s) => oldSeries.includes(s) || scrapedSeries.includes(s));
+  return { series, cards: Array.from(byTitle.values()) };
 }
 
 /** Command line: --series D,DZ,V,G,OLD  --limit <batches>  --out <path> */
@@ -298,12 +339,28 @@ async function main() {
     }
   }
 
-  const cards = Array.from(byTitle.values()).sort((a, b) => a.title.localeCompare(b.title));
+  // A scrape of only some series must not erase the others from the file the
+  // build reads: merge into what is already there.
+  let existing = null;
+  if (opts.series.length < ALL_SERIES.length && fs.existsSync(opts.out)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(opts.out, 'utf8'));
+    } catch (err) {
+      throw new Error(`${opts.out} exists but can't be read (${err.message}); refusing to replace it with a partial scrape`);
+    }
+  }
+  const merged = existing
+    ? mergeScrapes(existing, Array.from(byTitle.values()), opts.series)
+    : { series: opts.series, cards: Array.from(byTitle.values()) };
+  const cards = merged.cards.sort((a, b) => a.title.localeCompare(b.title));
+  if (existing) {
+    console.log(`Merged into ${opts.out}: kept ${cards.length - byTitle.size} page(s) of other series, series now ${merged.series.join(', ')}`);
+  }
   const output = {
     scrapedAt: new Date().toISOString(),
     sourceUrl: 'https://cardfight.fandom.com',
     license: 'CC BY-SA 3.0',
-    series: opts.series,
+    series: merged.series,
     requestsMade,
     count: cards.length,
     cards,
@@ -321,4 +378,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { extractCodes, pageToCard, parseArgs };
+module.exports = { extractCodes, pageToCard, parseArgs, mergeScrapes };

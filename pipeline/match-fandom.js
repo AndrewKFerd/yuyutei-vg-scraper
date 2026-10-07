@@ -14,8 +14,10 @@
  *  2. Japanese name -- for printings the wiki doesn't list (yuyu-tei's own
  *     variant codes, newer reprints), the card's base name (variant markers
  *     like "(箔押し)" stripped) against the page's kanji/kana name. Only pages
- *     that list a printing in the same series family as the card count
- *     (D-/DZ- together; V-, G- and older sets each on their own), so a
+ *     that belong to the same series family as the card count -- by a listed
+ *     printing, or for a page with none, by the template it came from
+ *     (D-/DZ- together; V-, G- and older sets each on their own; generic
+ *     "PR/" promos are matched by code only), so a
  *     V-era card is never matched to an unrelated D-era card that happens to
  *     share its name. Many names cover several different cards (four
  *     Chronojet Dragons), so a name shared by multiple pages only matches if
@@ -27,7 +29,7 @@
 const fs = require('fs');
 const path = require('path');
 const { baseName } = require('./card-group');
-const { familyOfCode } = require('./fandom-series');
+const { familyOfCode, pageFamilies, isNameMatchable } = require('./fandom-series');
 
 const RAW_DATA_PATH = path.join(__dirname, 'data', 'fandom-raw.json');
 
@@ -47,7 +49,13 @@ function setOf(code) {
 function createMatcher(raw) {
   const byCode = new Map();
   const byName = new Map();
+  // page -> the series families it belongs to. A file with no recorded
+  // `series` predates family-tagged pages and was a D/DZ-only scrape, so its
+  // codeless pages (the {{DTable}} ones) are D-era.
+  const legacy = !raw?.series;
+  const families = new Map();
   for (const card of raw?.cards || []) {
+    families.set(card, pageFamilies(card, { legacy }));
     for (const code of card.codes || []) {
       if (!byCode.has(code)) byCode.set(code, card);
     }
@@ -60,8 +68,9 @@ function createMatcher(raw) {
   function matchByName(code, nameJp) {
     const all = byName.get(normalizeName(baseName(nameJp)));
     if (!all) return null;
+    if (!isNameMatchable(code)) return null;
     const family = familyOfCode(code);
-    const candidates = all.filter((c) => (c.codes || []).some((k) => familyOfCode(k) === family));
+    const candidates = all.filter((c) => families.get(c).has(family));
     if (candidates.length === 0) return null;
     if (candidates.length === 1) return candidates[0];
     const set = setOf(code);

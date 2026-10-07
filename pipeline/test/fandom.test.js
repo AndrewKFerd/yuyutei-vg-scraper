@@ -4,7 +4,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { seriesOfCode, familyOfCode, parseSeries, ALL_SERIES } = require('../fandom-series');
-const { extractCodes, pageToCard, parseArgs } = require('../scrape-fandom');
+const { extractCodes, pageToCard, parseArgs, mergeScrapes } = require('../scrape-fandom');
 const { createMatcher } = require('../match-fandom');
 
 describe('seriesOfCode / familyOfCode', () => {
@@ -140,5 +140,101 @@ describe('createMatcher', () => {
     assert.equal(find('VG-X01/001', 'ドラゴン'), null);
     assert.equal(find('', 'ドラゴン'), null);
     assert.equal(createMatcher(null)('D-BT01/001', 'ドラゴン'), null);
+  });
+});
+
+describe('codeless pages (DZ-BT11/EX30, EX31 regression)', () => {
+  // These two {{DTable}} pages list no printing codes; they match by name only.
+  const pages = [
+    { title: 'Magic for Finding Lost Accessories', nameEn: 'Magic for Finding Lost Accessories', kanji: '失せ物探しの魔法', codes: [] },
+    { title: 'Magic to Create a Field of Flowers', nameEn: 'Magic to Create a Field of Flowers', kanji: '花畑を作る魔法', codes: [] },
+  ];
+
+  it('an old fandom-raw.json (no series field) treats codeless pages as D-era', () => {
+    const find = createMatcher({ cards: pages });
+    assert.equal(find('DZ-BT11/EX30', '失せ物探しの魔法').title, 'Magic for Finding Lost Accessories');
+    assert.equal(find('DZ-BT11/EX31', '花畑を作る魔法(箔押し)').title, 'Magic to Create a Field of Flowers');
+    assert.equal(find('V-BT11/EX30', '失せ物探しの魔法'), null); // not an era the page belongs to
+  });
+
+  it('a newer file uses the recorded family, and does not guess for pages without one', () => {
+    const tagged = createMatcher({ series: ['D', 'DZ', 'V'], cards: pages.map((p) => ({ ...p, family: 'D' })) });
+    assert.equal(tagged('D-BT11/EX30', '失せ物探しの魔法').title, 'Magic for Finding Lost Accessories');
+    const untagged = createMatcher({ series: ['D', 'DZ', 'V'], cards: pages });
+    assert.equal(untagged('D-BT11/EX30', '失せ物探しの魔法'), null);
+  });
+
+  it('pageToCard records the template family on a {{DTable}} page', () => {
+    const page = { title: 'X', revisions: [{ slots: { main: { content: '{{DTable\n|kanji = テスト\n}}' } } }] };
+    assert.equal(pageToCard(page, ['D'], ['D', 'DZ']).family, 'D');
+    assert.equal('family' in pageToCard({ ...page, revisions: [{ slots: { main: { content: '{{CardTable\n|kanji = テ\n|set1 = G-BT01/001\n}}' } } }] }, ['G']), false);
+  });
+});
+
+describe('series of unusual prefixes', () => {
+  it('V-era promos (VPR/) are V, not OLD', () => {
+    assert.equal(seriesOfCode('VPR/0001'), 'V');
+    assert.equal(familyOfCode('vpr/0042'), 'V');
+  });
+
+  it('other unprefixed spin-off sets are OLD; hyphenated gift codes belong to no series', () => {
+    for (const code of ['VZ/001', 'MB/066', 'DG01/005', 'CG01/001', 'KAD1/002', 'MBT01/L01', 'FC01/S02', 'HS08/001']) {
+      assert.equal(seriesOfCode(code), 'OLD', code);
+    }
+    assert.equal(seriesOfCode('VG-10th/0001'), null);
+    assert.equal(seriesOfCode('001'), null);
+  });
+
+  it('generic PR/ promos match by exact code only, never by name', () => {
+    const find = createMatcher({
+      series: ['OLD'],
+      cards: [{ title: 'Shield', nameEn: 'Guardian Shield', kanji: 'ガーディアンシールド', codes: ['PR/0860', 'BT01/001'] }],
+    });
+    assert.equal(find('PR/0860', 'x').title, 'Shield');
+    assert.equal(find('PR/0999', 'ガーディアンシールド'), null);
+    assert.equal(find('BT02/001', 'ガーディアンシールド').title, 'Shield'); // a real product set still may
+  });
+});
+
+describe('mergeScrapes (a partial --series run must not drop the other series)', () => {
+  const page = (title, codes, extra = {}) => ({ title, nameEn: title, kanji: title, codes, ...extra });
+  const existing = {
+    series: ['D', 'DZ', 'V', 'G'],
+    cards: [
+      page('Dee', ['D-BT01/001', 'DZ-BT01/001']),
+      page('Codeless', [], { family: 'D' }),
+      page('Both', ['D-BT01/002', 'V-BT01/002']),
+      page('Vee', ['V-BT01/001']),
+      page('Gone', ['V-BT01/099']),
+      page('Gee', ['G-BT01/001']),
+    ],
+  };
+
+  it('replaces only the scraped series and keeps everything else', () => {
+    const scraped = [page('Vee', ['V-BT01/001', 'V-BT01/S01']), page('Both', ['V-BT01/002']), page('NewV', ['V-BT02/001'])];
+    const out = mergeScrapes(existing, scraped, ['V']);
+    const by = Object.fromEntries(out.cards.map((c) => [c.title, c]));
+    assert.deepEqual(Object.keys(by).sort(), ['Both', 'Codeless', 'Dee', 'Gee', 'NewV', 'Vee']);
+    assert.deepEqual(by.Dee.codes, ['D-BT01/001', 'DZ-BT01/001']);
+    assert.deepEqual(by.Gee.codes, ['G-BT01/001']);
+    assert.ok(by.Codeless); // D-era codeless page survives a V-only run
+    assert.deepEqual(by.Vee.codes, ['V-BT01/001', 'V-BT01/S01']);
+    // a card printed in D and V keeps its D code when only V is rescraped
+    assert.deepEqual(by.Both.codes.sort(), ['D-BT01/002', 'V-BT01/002']);
+    assert.equal(by.Gone, undefined); // V page that left the wiki
+    assert.deepEqual(out.series, ['D', 'DZ', 'V', 'G']);
+  });
+
+  it('treats an old file with no series field as a D/DZ scrape, and widens the recorded series', () => {
+    const old = { cards: [page('Dee', ['D-BT01/001']), page('Codeless', [])] };
+    const out = mergeScrapes(old, [page('Gee', ['G-BT01/001'])], ['G']);
+    assert.deepEqual(out.cards.map((c) => c.title).sort(), ['Codeless', 'Dee', 'Gee']);
+    assert.deepEqual(out.series, ['D', 'DZ', 'G']);
+  });
+
+  it('drops a codeless page of a family that was rescraped but did not come back', () => {
+    const out = mergeScrapes(existing, [], ['D', 'DZ']);
+    assert.equal(out.cards.some((c) => c.title === 'Codeless'), false);
+    assert.ok(out.cards.some((c) => c.title === 'Gee'));
   });
 });

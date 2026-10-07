@@ -10,8 +10,10 @@
  *   V     "V-EB05/SSP01"   V-era (2017-2020)
  *   G     "G-BT01/001"     G-era (2013-2017)
  *   OLD   "BT01/002", "PR/0089", "TD01/005"   the original series and every
- *                          set code with no series prefix (EB, FC, KAD, MB...)
- * Codes with any other prefix ("VG-...") belong to no supported series.
+ *                          other unprefixed set code (EB, FC, HS, KAD, MB,
+ *                          VZ, DG, CG, MBT, MTD, PR...). V-era promos
+ *                          ("VPR/0001") are the exception: they are V.
+ * Codes with any other prefix ("VG-10th/...") belong to no supported series.
  *
  * D and DZ are one family for matching: the wiki lists a D-era card's reprints
  * across both, so a yuyu-tei "D-" card may match a page that only has "DZ-"
@@ -36,14 +38,54 @@ function seriesOfCode(code) {
   if (c.startsWith('D-')) return 'D';
   if (c.startsWith('V-')) return 'V';
   if (c.startsWith('G-')) return 'G';
-  if (c.includes('-')) return null;
+  if (c.includes('-')) return null; // e.g. "VG-10th/0001" (the 10th anniversary gift markers)
+  // V-era promos (yuyu-tei sets vpromo-*) carry no hyphen: "VPR/0001".
+  if (c.startsWith('VPR/')) return 'V';
+  // Everything else unprefixed is a product of the original series or one of
+  // its spin-offs (BT, EB, TD, FC, HS, MBT, MTD, KAD, MBD, VZ, DG, CG, MB, PR).
   return /^[A-Z]+\d*[A-Z]*\//.test(c) ? 'OLD' : null;
 }
 
 /** D and DZ share a family; every other series is its own. */
-function familyOfCode(code) {
-  const series = seriesOfCode(code);
+function familyOfSeries(series) {
   return series === 'DZ' ? 'D' : series;
+}
+
+function familyOfCode(code) {
+  return familyOfSeries(seriesOfCode(code));
+}
+
+// What a fandom-raw.json written before pages recorded their template (and
+// before the file recorded its series) contains: D/DZ only, so any page in
+// it with no codes came from {{DTable}}.
+const LEGACY_SERIES = ['D', 'DZ'];
+
+/**
+ * The families a wiki page belongs to: those of its codes, plus the family of
+ * the template it came from (the only link a codeless page has). `legacy`
+ * says the file predates the recorded family, in which case a codeless page
+ * is a D-era one.
+ */
+function pageFamilies(page, { legacy = false } = {}) {
+  const families = new Set();
+  for (const code of page.codes || []) {
+    const f = familyOfCode(code);
+    if (f) families.add(f);
+  }
+  if (page.family) families.add(page.family);
+  else if (legacy && families.size === 0) families.add(familyOfSeries(LEGACY_SERIES[0]));
+  return families;
+}
+
+/**
+ * Whether a card code may be matched by Japanese name when its exact code is
+ * unknown. Not for generic "PR/xxxx" promos: that numbering runs across
+ * several eras, so a namesake from another era is too likely to be a
+ * different card. (They still match by exact code.)
+ */
+function isNameMatchable(code) {
+  const c = String(code || '').trim().toUpperCase();
+  return Boolean(seriesOfCode(c)) && !/^PR\//.test(c);
 }
 
 /** "D,DZ,V" -> ['D', 'DZ', 'V']; throws on an unknown name so a typo can't silently scrape nothing. */
@@ -56,4 +98,15 @@ function parseSeries(arg) {
   return ALL_SERIES.filter((s) => names.includes(s));
 }
 
-module.exports = { ALL_SERIES, CARD_CODE_RE, FOREIGN_CODE_RE, seriesOfCode, familyOfCode, parseSeries };
+module.exports = {
+  ALL_SERIES,
+  LEGACY_SERIES,
+  CARD_CODE_RE,
+  FOREIGN_CODE_RE,
+  seriesOfCode,
+  familyOfSeries,
+  familyOfCode,
+  pageFamilies,
+  isNameMatchable,
+  parseSeries,
+};
