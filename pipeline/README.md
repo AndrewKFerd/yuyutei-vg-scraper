@@ -1,50 +1,51 @@
-# pipeline/scrape-catalog.js
+# pipeline
 
-Scrapes yuyu-tei's full VG (Cardfight!! Vanguard) single-card sell catalog
-using the site's global paginated search endpoint (returns cards from every
-set at once, not just one), and writes the aggregated result to
-`pipeline/data/catalog-raw.json`.
+The offline half of the project: scrapes yuyu-tei.jp (prices, stock, Japanese
+card text), cf-vanguard.com (official English names/text) and the Cardfight!!
+Vanguard Wiki (fan translations), translates card names, records the price
+history, and uploads the result to the private Supabase bucket the frontend
+reads through its Vercel Functions.
+
+**The root [`README.md`](../README.md) is the reference**: architecture, the
+catalog split, every safety gate and its override, how the scheduled refresh
+works. This file only maps the directory.
 
 ## Setup
 
 ```
 cd pipeline
 npm install
+cp .env.example .env     # SUPABASE_S3_* -- only needed for history/upload steps
+npm test                 # node --test
 ```
 
-## Run
+## Scripts
 
-```
-npm run scrape
-```
+| Script | What it does | Output (in `data/`) |
+|---|---|---|
+| `scrape-catalog.js` | yuyu-tei's global VG search, every set's listings | `catalog-raw.json` |
+| `scrape-set.js <slug>` | refresh one set inside `catalog-raw.json` | |
+| `scrape-cf-vanguard.js` | official English database (names, stats, skill text); keeps the old file if the scrape is incomplete (`reference-gate.js`) | `cf-vanguard-raw.json` |
+| `scrape-card-detail.js` | per-card yuyu-tei detail page: Japanese skill text. Slow, resumable; `--missing` retries only cards that could still gain text | `card-details-raw.json` (committed) |
+| `scrape-fandom.js` | wiki fan translations; `--series D,DZ,V,G,OLD`, `--limit`/`--out` for samples | `fandom-raw.json` (committed) |
+| `record-history.js` | appends this run to the price history; holds the run gates | `price-history.json`, `history-public.json`, `movers.json` |
+| `backfill-history.js` | one-off seeding of the history from git snapshots | |
+| `build-data.js` | joins everything into the served files | `cards.json`, `catalog.json`, `details/<set>.json` |
+| `upload-cards.js` | uploads to the bucket (changed detail shards only) | `upload-manifest.json` |
+| `refresh-and-push.ps1` | the scheduled run: catalog -> history -> cf-vanguard (at most daily) -> build -> upload | `refresh.log` |
 
-or directly:
+Run any of the Node scripts from this directory, e.g. `node build-data.js`;
+the ones that touch the bucket need `node --env-file=.env <script>`.
 
-```
-node scrape-catalog.js
-```
+## Modules
 
-The crawl walks `https://yuyu-tei.jp/sell/vg/s/search?search_word=&page=N`
-starting at `page=1`, with a ~400ms politeness delay between requests, up to
-200 pages (sanity ceiling). It stops as soon as a page returns zero
-`div.card-product` elements. Failed page requests are retried up to twice
-with backoff before being logged as a warning and skipped. Duplicate
-`setSlug`+`id` combinations (can happen if pagination overlaps) are deduped,
-keeping the first occurrence. Progress is logged every 10 pages.
+`http-client.js` (browser-like headers, cookie jar, 30 s request timeout),
+`s3.js` (bucket client with timeouts), `fs-atomic.js` (crash-safe writes),
+`catalog-gate.js` / `reference-gate.js` (the size/loss gates),
+`price-history.js` (history format, `chg7d`, movers), `catalog-split.js` (the
+slim catalog and detail shards), `match-official.js` / `match-fandom.js` /
+`fandom-series.js` / `translate-engine.js` + `data/glossary.json` (name
+sources, in that order of preference), `card-group.js` (one key per card across
+foil/parallel variants).
 
-A full run takes several minutes (currently ~47 pages). Output:
-
-```
-pipeline/data/catalog-raw.json
-```
-
-with shape:
-
-```json
-{
-  "scrapedAt": "2026-09-15T13:49:22.609Z",
-  "pagesScraped": 47,
-  "count": 28199,
-  "cards": [ { "id", "setCode", "setSlug", "rarity", "nameJp", "price", "priceDisplay", "stock", "imageUrl", "detailUrl" }, ... ]
-}
-```
+`CF_VANGUARD_NOTES.md` records how cf-vanguard set codes map to yuyu-tei's.
