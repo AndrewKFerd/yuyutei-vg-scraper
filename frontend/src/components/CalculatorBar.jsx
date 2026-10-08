@@ -3,13 +3,13 @@ import RarityBadge from './RarityBadge'
 import QtyStepper from './QtyStepper'
 import { formatPrice } from '../currency'
 import { formatListAsText } from '../useCalculator'
-import { useDialogFocus } from '../useDialogFocus'
+import { focusSoon, useDialogFocus } from '../useDialogFocus'
 
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 const nameOf = (line) => line.nameEn || line.nameJp || line.setCode || 'card'
 
 // Total in the display currency, then (when converted) the JPY it came from.
-function useTotalText(totals, currency, rates) {
+function totalText(totals, currency, rates) {
   const converted = currency !== 'JPY' && Boolean(rates)
   return {
     main: formatPrice(totals.totalJpy, currency, rates),
@@ -23,19 +23,27 @@ function useTotalText(totals, currency, rates) {
  * live region stays mounted even while the bar is hidden, since a region
  * inserted together with its text is often not announced.
  */
-function CalculatorBar({ calc, currency, rates, panelOpen, onOpenPanel, buttonRef }) {
+function CalculatorBar({ calc, currency, rates, visible, panelOpen, onOpenPanel, buttonRef }) {
   const { totals, undoInfo, message } = calc
-  const total = useTotalText(totals, currency, rates)
+  const total = totalText(totals, currency, rates)
   const hasItems = totals.cards > 0
-  // Stays up while the panel is open (even if the list was just emptied) so
-  // "View list" exists for focus to return to.
-  const visible = hasItems || Boolean(undoInfo) || panelOpen
+  // `visible` is decided once, in App; it stays true while the panel is open
+  // (even if the list was just emptied) so "View list" exists for focus to
+  // return to.
 
-  const announcement = message
-    ? message.kind === 'full' || totals.cards === 0
-      ? message.text
-      : `${message.text} — ${plural(totals.cards, 'card', 'cards')}, ${total.main}`
-    : ''
+  // The announcement is built once per action and then frozen: rebuilding it
+  // from live totals would re-announce "Added X" whenever the currency,
+  // rates or a quantity field changed. (State set during render, keyed on
+  // the message object, which is new for every action.)
+  const [announced, setAnnounced] = useState({ message: null, text: '' })
+  if (message && announced.message !== message) {
+    const text =
+      message.kind === 'full' || message.cards === 0
+        ? message.text
+        : `${message.text} — ${plural(message.cards, 'card', 'cards')}, ${formatPrice(message.totalJpy, currency, rates)}`
+    setAnnounced({ message, text })
+  }
+  const announcement = announced.text
 
   return (
     <>
@@ -111,7 +119,7 @@ function lineWarnings(line) {
   return out
 }
 
-function CalcRow({ line, currency, rates, calc, onOpenCard }) {
+function CalcRow({ line, currency, rates, calc, onOpenCard, onRemove }) {
   const name = nameOf(line)
   const warnings = lineWarnings(line)
   return (
@@ -148,7 +156,8 @@ function CalcRow({ line, currency, rates, calc, onOpenCard }) {
       </div>
       <button
         type="button"
-        onClick={() => calc.remove(line.id)}
+        onClick={onRemove}
+        data-remove={line.id}
         aria-label={`Remove ${name}`}
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-red-600 dark:text-gold-500/70 dark:hover:bg-night-700 dark:hover:text-red-400"
       >
@@ -171,7 +180,7 @@ export function CalculatorPanel({ calc, currency, rates, onClose, onOpenCard, su
   const sheetRef = useRef(null)
   const [copyState, setCopyState] = useState(null) // null | 'copied' | 'failed'
   const copyTimer = useRef(null)
-  const total = useTotalText(totals, currency, rates)
+  const total = totalText(totals, currency, rates)
   useDialogFocus(sheetRef, { open: true, trap: !suspended })
 
   useEffect(() => {
@@ -212,6 +221,25 @@ export function CalculatorPanel({ calc, currency, rates, onClose, onOpenCard, su
     setCopyState(state)
     clearTimeout(copyTimer.current)
     copyTimer.current = setTimeout(() => setCopyState(null), 2000)
+  }
+
+  // Removing a row, clearing or undoing deletes the focused control; hand
+  // focus to a neighbour, or the sheet when nothing is left.
+  const removeButtonOf = (id) => () =>
+    [...sheetRef.current.querySelectorAll('[data-remove]')].find((b) => b.dataset.remove === id)
+  const removeRow = (id) => {
+    const i = lines.findIndex((l) => l.id === id)
+    const neighbour = lines[i + 1] || lines[i - 1]
+    calc.remove(id)
+    focusSoon(neighbour ? removeButtonOf(neighbour.id) : () => sheetRef.current)
+  }
+  const clearAll = () => {
+    calc.clear()
+    focusSoon(() => sheetRef.current.querySelector('[data-calc-undo]') || sheetRef.current)
+  }
+  const undoFromEmpty = () => {
+    calc.undo()
+    focusSoon(() => sheetRef.current.querySelector('[data-remove]') || sheetRef.current)
   }
 
   const showBuyable = totals.issues > 0 && totals.buyableJpy !== totals.totalJpy
@@ -258,7 +286,8 @@ export function CalculatorPanel({ calc, currency, rates, onClose, onOpenCard, su
             {undoInfo && (
               <button
                 type="button"
-                onClick={calc.undo}
+                onClick={undoFromEmpty}
+                data-calc-undo
                 className="mt-2 text-sm font-semibold text-brand-700 underline-offset-2 hover:underline dark:text-brand-400"
               >
                 Undo — {undoInfo.label}
@@ -268,7 +297,15 @@ export function CalculatorPanel({ calc, currency, rates, onClose, onOpenCard, su
         ) : (
           <ul className="min-h-0 flex-1 overflow-y-auto">
             {lines.map((line) => (
-              <CalcRow key={line.id} line={line} currency={currency} rates={rates} calc={calc} onOpenCard={onOpenCard} />
+              <CalcRow
+                key={line.id}
+                line={line}
+                currency={currency}
+                rates={rates}
+                calc={calc}
+                onOpenCard={onOpenCard}
+                onRemove={() => removeRow(line.id)}
+              />
             ))}
           </ul>
         )}
@@ -307,7 +344,7 @@ export function CalculatorPanel({ calc, currency, rates, onClose, onOpenCard, su
               </button>
               <button
                 type="button"
-                onClick={calc.clear}
+                onClick={clearAll}
                 className="text-sm font-medium text-red-600 underline-offset-2 hover:underline dark:text-red-400"
               >
                 Clear all

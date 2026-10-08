@@ -540,6 +540,7 @@ function App() {
         calc={calc}
         currency={currency}
         rates={rates}
+        visible={calcBarVisible}
         panelOpen={calcOpen}
         onOpenPanel={openCalc}
         buttonRef={calcButtonRef}

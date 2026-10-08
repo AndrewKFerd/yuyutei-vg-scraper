@@ -15,6 +15,15 @@ const FOCUSABLE =
  *    the two traps don't fight; focus isn't restored when only `trap`
  *    changes.
  */
+/**
+ * After an action removes the control that had focus (so focus would fall
+ * to <body>), move it to what `find()` returns -- called once the re-render
+ * has been committed.
+ */
+export function focusSoon(find) {
+  requestAnimationFrame(() => find()?.focus({ preventScroll: true }))
+}
+
 export function useDialogFocus(ref, { open, trap = open }) {
   useEffect(() => {
     if (!open) return

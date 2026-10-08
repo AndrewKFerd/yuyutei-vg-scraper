@@ -18,7 +18,7 @@ import {
 import { imageUrl2x, imageUrlHd } from '../images'
 import { loadSetDetails, reloadSetDetailsIfCached } from '../details'
 import { stockInfo } from '../stock'
-import { useDialogFocus } from '../useDialogFocus'
+import { focusSoon, useDialogFocus } from '../useDialogFocus'
 import QtyStepper from './QtyStepper'
 
 // Full-screen view of the 500x700 scan. Tap/click anywhere, press Escape or
@@ -286,28 +286,36 @@ function CalcControl({ card, qty, onChange }) {
   const stock = card.stock
   if (qty === 0) {
     return (
-      <div className="flex flex-col items-end gap-1">
+      <div data-calc-modal className="flex flex-col items-end gap-1">
         <button
           type="button"
-          onClick={() => onChange(card, 1)}
+          data-calc-add
+          onClick={() => {
+            onChange(card, 1)
+            // This button is replaced by the stepper; keep focus in the control.
+            focusSoon(() => document.querySelector('[data-calc-modal] button[aria-label^="Increase"]'))
+          }}
           className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 dark:bg-brand-500 dark:text-night-950 dark:hover:bg-brand-400"
         >
           Add to calculator
         </button>
         {stock === 0 && (
           <span className="text-[11px] text-slate-500 dark:text-gold-500/70">
-            Out of stock — still added to your list
+            Out of stock — you can still add it
           </span>
         )}
       </div>
     )
   }
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+    <div data-calc-modal className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <QtyStepper value={qty} onChange={(n) => onChange(card, n)} label={name} />
       <button
         type="button"
-        onClick={() => onChange(card, 0)}
+        onClick={() => {
+          onChange(card, 0)
+          focusSoon(() => document.querySelector('[data-calc-modal] [data-calc-add]'))
+        }}
         className="text-xs text-red-600 underline-offset-2 hover:underline dark:text-red-400"
       >
         Remove
