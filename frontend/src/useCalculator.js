@@ -85,6 +85,13 @@ function flagsFor(item, listed) {
   return flags
 }
 
+// Cards / JPY sum of a list, for freezing into an action's message.
+function summaryOf(items) {
+  let totalJpy = 0
+  for (const { qty, snap } of items) if (snap.price != null) totalJpy += snap.price * qty
+  return { cards: items.length, totalJpy }
+}
+
 // Totals are integer JPY. `totalJpy` deliberately includes out-of-stock and
 // unlisted cards (the point is adding up the prices; silently leaving them
 // out would look like a bug); `buyableJpy` is what could actually be bought.
@@ -149,7 +156,9 @@ export function useCalculator({ cardsById, catalogReady, catalogGeneratedAt }) {
     setItems(next)
     undoRef.current = undo ? { items: undo, label: text } : null
     setUndoInfo(undoRef.current)
-    setMessage({ text, kind })
+    // The summary is frozen here (not recomputed from live totals) so the
+    // bar's live region only speaks when something was actually done.
+    setMessage({ text, kind, ...summaryOf(next) })
     clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
       undoRef.current = null
@@ -257,7 +266,7 @@ export function useCalculator({ cardsById, catalogReady, catalogGeneratedAt }) {
     itemsRef.current = info.items
     setItems(info.items)
     setUndoInfo(null)
-    setMessage({ text: 'Restored', kind: 'info' })
+    setMessage({ text: 'Restored', kind: 'info', ...summaryOf(info.items) })
   }, [])
 
   // Newer data wins: when a catalog built after a line's snapshot arrives,
@@ -266,16 +275,18 @@ export function useCalculator({ cardsById, catalogReady, catalogGeneratedAt }) {
   useEffect(() => {
     const catalogMs = Date.parse(catalogGeneratedAt)
     if (!catalogReady || !Number.isFinite(catalogMs)) return
-    setItems((prev) => {
-      let changed = false
-      const next = prev.map((item) => {
-        const card = cardsById.get(item.id)
-        if (!card || catalogMs <= item.at) return item
-        changed = true
-        return { ...item, at: catalogMs, snap: snapOf(card) }
-      })
-      return changed ? next : prev
+    // Through the ref (not a functional setItems) so a user change right
+    // after this builds on the refreshed list.
+    let changed = false
+    const next = itemsRef.current.map((item) => {
+      const card = cardsById.get(item.id)
+      if (!card || catalogMs <= item.at) return item
+      changed = true
+      return { ...item, at: catalogMs, snap: snapOf(card) }
     })
+    if (!changed) return
+    itemsRef.current = next
+    setItems(next)
   }, [cardsById, catalogReady, catalogGeneratedAt])
 
   // Persist. Only writes when the serialized list differs from what is
@@ -295,7 +306,14 @@ export function useCalculator({ cardsById, catalogReady, catalogGeneratedAt }) {
   // Another tab changed the list.
   useEffect(() => {
     const onStorage = (e) => {
-      if (e.key === STORAGE_KEY) setItems(e.newValue ? parseStored(e.newValue) : [])
+      if (e.key !== STORAGE_KEY) return
+      const next = e.newValue ? parseStored(e.newValue) : []
+      itemsRef.current = next
+      setItems(next)
+      // An Undo captured before the sync would resurrect the old list.
+      clearTimeout(timerRef.current)
+      undoRef.current = null
+      setUndoInfo(null)
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
