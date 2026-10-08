@@ -61,8 +61,10 @@ function CardTile({ card, currency, rates, onSelect, delta, caption, selectedQty
               <DeltaChip from={chip.from} to={chip.to} period={chip.period} variant="overlay" />
             </div>
           )}
+          {/* pr-10 centers the label in the space left of the calculator
+              toggle, which sits over this bar's right end. */}
           {!inStock && (
-            <div className="absolute inset-x-0 bottom-0 bg-black/60 py-0.5 text-center text-[10px] font-semibold uppercase tracking-wide text-white">
+            <div className="absolute inset-x-0 bottom-0 bg-black/60 py-0.5 pl-1 pr-10 text-center text-[10px] font-semibold uppercase tracking-wide text-white">
               Out of stock
             </div>
           )}
@@ -91,17 +93,16 @@ function CardTile({ card, currency, rates, onSelect, delta, caption, selectedQty
         </div>
       </button>
       {/* Same box as the art (inside the 1px border) so the toggle can anchor
-          to its corner; only the button itself takes clicks. Raised above the
-          "Out of stock" bar when there is one. */}
+          to its corner; only the button itself takes clicks. Same spot on
+          every tile, in stock or not -- it sits over the right end of the
+          "Out of stock" bar, whose label is shifted left to make room. */}
       <div className="pointer-events-none absolute inset-x-px top-px aspect-[100/140]">
         <button
           type="button"
           onClick={() => onToggle(card)}
           aria-label={toggleLabel}
           title={toggleLabel}
-          className={`pointer-events-auto absolute right-1.5 ${
-            inStock ? 'bottom-1.5' : 'bottom-6'
-          } flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold tabular-nums shadow-sm transition ${
+          className={`pointer-events-auto absolute bottom-1.5 right-1.5 flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold tabular-nums shadow-sm transition ${
             selected
               ? 'bg-brand-600 text-white ring-2 ring-white dark:bg-brand-500 dark:text-night-950 dark:ring-night-900'
               : 'bg-white/90 text-slate-700 ring-1 ring-slate-300 hover:bg-white hover:text-brand-700 dark:bg-night-900/85 dark:text-gold-500 dark:ring-night-600 dark:hover:text-brand-400'
