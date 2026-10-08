@@ -316,7 +316,8 @@ function CalcControl({ card, qty, onChange }) {
           onChange(card, 0)
           focusSoon(() => document.querySelector('[data-calc-modal] [data-calc-add]'))
         }}
-        className="text-xs text-red-600 underline-offset-2 hover:underline dark:text-red-400"
+        // -my-2 py-2 keeps a 32px tap target without changing the row height.
+        className="-my-2 inline-flex min-h-8 items-center px-1 py-2 text-xs text-red-600 underline-offset-2 hover:underline dark:text-red-400"
       >
         Remove
       </button>
