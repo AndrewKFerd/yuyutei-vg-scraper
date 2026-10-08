@@ -3,6 +3,7 @@ import { fetchCatalog, refreshCatalog } from './api'
 import { getRates } from './currency'
 import { DEFAULT_MOVER_WINDOW, MOVER_WINDOWS, pctChange } from './history'
 import { applyTheme, getInitialTheme } from './theme'
+import { useCalculator } from './useCalculator'
 import Header from './components/Header'
 import SearchBar from './components/SearchBar'
 import SetFilter from './components/SetFilter'
@@ -12,6 +13,7 @@ import CurrencySelector from './components/CurrencySelector'
 import CardGrid from './components/CardGrid'
 import RaritySections from './components/RaritySections'
 import CardModal from './components/CardModal'
+import CalculatorBar, { CalculatorPanel } from './components/CalculatorBar'
 import MoversView, { DEFAULT_MIN_PRICE } from './components/MoversView'
 import Pagination from './components/Pagination'
 import Footer from './components/Footer'
@@ -155,6 +157,14 @@ function App() {
   // and an inline arrow would tear down and re-attach that effect on every
   // App render (i.e. every keystroke in the search box).
   const closeModal = useCallback(() => setSelectedCard(null), [])
+
+  // Price calculator: the list lives in the hook (and localStorage); the
+  // panel's open state and its "View list" button (where focus returns on
+  // close) live here.
+  const [calcOpen, setCalcOpen] = useState(false)
+  const closeCalc = useCallback(() => setCalcOpen(false), [])
+  const openCalc = useCallback(() => setCalcOpen(true), [])
+  const calcButtonRef = useRef(null)
 
   // Keeps the input snappy: the text state updates immediately on every
   // keystroke, while the (potentially expensive) filtered grid re-render
@@ -327,6 +337,14 @@ function App() {
     )
   }, [setScopedCards, searchText, deferredQuery, rarity])
 
+  const calc = useCalculator({
+    cardsById,
+    catalogReady: status === 'ready',
+    catalogGeneratedAt: meta?.generatedAt,
+  })
+  // Room for the sticky calculator bar so Pagination/Footer stay reachable.
+  const calcBarVisible = calc.items.length > 0 || Boolean(calc.undoInfo) || calcOpen
+
   const sortedCards = useMemo(() => sortCards(filteredCards, sort), [filteredCards, sort])
 
   // Whenever the effective filter or sort changes, snap back to page 1 —
@@ -372,7 +390,7 @@ function App() {
   const countLabel = filteredCards.length.toLocaleString()
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-night-900">
+    <div className={`flex min-h-screen flex-col bg-slate-50 dark:bg-night-900 ${calcBarVisible ? 'pb-28' : ''}`}>
       <Header meta={meta} theme={theme} onToggleTheme={toggleTheme} />
 
       <main className="flex-1">
@@ -450,6 +468,8 @@ function App() {
               currency={currency}
               rates={rates}
               onSelect={setSelectedCard}
+              qtyById={calc.qtyById}
+              onToggle={calc.toggle}
             />
           )}
 
@@ -460,6 +480,8 @@ function App() {
                 currency={currency}
                 rates={rates}
                 onSelect={setSelectedCard}
+                qtyById={calc.qtyById}
+                onToggle={calc.toggle}
               />
               <Pagination page={safePage} totalPages={totalPages} onChange={setPage} />
             </>
@@ -482,6 +504,8 @@ function App() {
             nation={moversNation}
             onNationChange={setMoversNation}
             onSelect={setSelectedCard}
+            qtyById={calc.qtyById}
+            onToggle={calc.toggle}
           />
         )}
 
@@ -508,7 +532,29 @@ function App() {
         isRefreshing={isRefreshing}
         refreshError={refreshError}
         dataVersion={dataVersion}
+        calcQty={selectedCard ? calc.qtyById.get(selectedCard.id) || 0 : 0}
+        onCalcChange={calc.setQtyFor}
       />
+
+      <CalculatorBar
+        calc={calc}
+        currency={currency}
+        rates={rates}
+        panelOpen={calcOpen}
+        onOpenPanel={openCalc}
+        buttonRef={calcButtonRef}
+      />
+      {calcOpen && (
+        <CalculatorPanel
+          calc={calc}
+          currency={currency}
+          rates={rates}
+          onClose={closeCalc}
+          onOpenCard={setSelectedCard}
+          suspended={Boolean(selectedCard)}
+          returnFocusRef={calcButtonRef}
+        />
+      )}
     </div>
   )
 }
