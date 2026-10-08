@@ -19,6 +19,7 @@ import { imageUrl2x, imageUrlHd } from '../images'
 import { loadSetDetails, reloadSetDetailsIfCached } from '../details'
 import { stockInfo } from '../stock'
 import { useDialogFocus } from '../useDialogFocus'
+import QtyStepper from './QtyStepper'
 
 // Full-screen view of the 500x700 scan. Tap/click anywhere, press Escape or
 // activate the close button to dismiss. Sits above the card modal (z-60 vs
@@ -277,10 +278,52 @@ function PriceHistorySection({
   )
 }
 
+// Footer control for the price calculator: add, or (once added) set the
+// quantity / remove. Going past the card's stock is allowed -- the warning
+// is just that -- since people buy for later or expect a restock.
+function CalcControl({ card, qty, onChange }) {
+  const name = card.nameEn || card.nameJp
+  const stock = card.stock
+  if (qty === 0) {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <button
+          type="button"
+          onClick={() => onChange(card, 1)}
+          className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 dark:bg-brand-500 dark:text-night-950 dark:hover:bg-brand-400"
+        >
+          Add to calculator
+        </button>
+        {stock === 0 && (
+          <span className="text-[11px] text-slate-500 dark:text-gold-500/70">
+            Out of stock — still added to your list
+          </span>
+        )}
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <QtyStepper value={qty} onChange={(n) => onChange(card, n)} label={name} />
+      <button
+        type="button"
+        onClick={() => onChange(card, 0)}
+        className="text-xs text-red-600 underline-offset-2 hover:underline dark:text-red-400"
+      >
+        Remove
+      </button>
+      {stock > 0 && qty > stock && (
+        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">Only {stock} in stock</span>
+      )}
+    </div>
+  )
+}
+
 // `catalogGeneratedAt` / `onRefresh` / `isRefreshing` / `refreshError` drive
 // the "newer data than your cached catalog" note; `dataVersion` changes
 // after a catalog refresh (which also drops the history cache) so history
-// reloads.
+// reloads. `calcQty` / `onCalcChange(card, qty)` are the price calculator's
+// quantity for this card and its setter (qty 0 removes).
 function CardModal({
   card,
   currency,
@@ -291,6 +334,8 @@ function CardModal({
   isRefreshing,
   refreshError,
   dataVersion,
+  calcQty,
+  onCalcChange,
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const closeLightbox = useCallback(() => setLightboxOpen(false), [])
@@ -560,17 +605,21 @@ function CardModal({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 sm:px-6 dark:border-night-600">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="flex items-center gap-1.5">
-              <span className="text-xl font-bold text-brand-700 dark:text-brand-400">{displayPrice}</span>
-              {card.chg7d && <DeltaChip from={card.chg7d.from} to={card.price} period="7 days" suffix="7d" />}
-            </span>
-            <span
-              className={`text-xs font-semibold ${inStock ? 'text-green-600' : 'text-red-500'}`}
-            >
-              {stockLabel}
-            </span>
+        <div className="flex flex-col gap-2 border-t border-slate-100 px-5 py-3 sm:px-6 dark:border-night-600">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="flex items-center gap-1.5">
+                <span className="text-xl font-bold text-brand-700 dark:text-brand-400">{displayPrice}</span>
+                {card.chg7d && <DeltaChip from={card.chg7d.from} to={card.price} period="7 days" suffix="7d" />}
+              </span>
+              <span
+                className={`text-xs font-semibold ${inStock ? 'text-green-600' : 'text-red-500'}`}
+              >
+                {stockLabel}
+              </span>
+            </div>
+
+            <CalcControl card={card} qty={calcQty} onChange={onCalcChange} />
           </div>
 
           {card.detailUrl && (
@@ -578,7 +627,7 @@ function CardModal({
               href={card.detailUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="-my-2 inline-block py-2 text-xs font-medium text-brand-600 hover:underline dark:text-brand-400"
+              className="-my-2 inline-block self-start py-2 text-xs font-medium text-brand-600 hover:underline dark:text-brand-400"
             >
               View original listing on Yuyu-tei ↗
             </a>
