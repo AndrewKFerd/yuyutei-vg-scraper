@@ -1,6 +1,6 @@
 import CardTile from './CardTile'
 
-function CardGrid({ cards, currency, rates, onSelect }) {
+function CardGrid({ cards, currency, rates, onSelect, qtyById, onToggle }) {
   if (cards.length === 0) {
     return (
       <div className="py-16 text-center text-sm text-slate-400 dark:text-gold-500/50">
@@ -12,7 +12,15 @@ function CardGrid({ cards, currency, rates, onSelect }) {
   return (
     <div className="grid grid-cols-2 gap-3 px-4 pb-10 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
       {cards.map((card) => (
-        <CardTile key={card.id} card={card} currency={currency} rates={rates} onSelect={onSelect} />
+        <CardTile
+          key={card.id}
+          card={card}
+          currency={currency}
+          rates={rates}
+          onSelect={onSelect}
+          selectedQty={qtyById.get(card.id) || 0}
+          onToggle={onToggle}
+        />
       ))}
     </div>
   )

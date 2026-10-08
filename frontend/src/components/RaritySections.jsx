@@ -6,7 +6,7 @@ import CardTile from './CardTile'
 // cards, small enough to show in full without pagination, and grouping by
 // rarity makes it much easier to scan (e.g. "show me all the SECs") than
 // hunting through print-run order.
-function RaritySections({ sections, currency, rates, onSelect }) {
+function RaritySections({ sections, currency, rates, onSelect, qtyById, onToggle }) {
   if (sections.length === 0) return null
 
   return (
@@ -24,7 +24,15 @@ function RaritySections({ sections, currency, rates, onSelect }) {
           </div>
           <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
             {cards.map((card) => (
-              <CardTile key={card.id} card={card} currency={currency} rates={rates} onSelect={onSelect} />
+              <CardTile
+                key={card.id}
+                card={card}
+                currency={currency}
+                rates={rates}
+                onSelect={onSelect}
+                selectedQty={qtyById.get(card.id) || 0}
+                onToggle={onToggle}
+              />
             ))}
           </div>
         </section>

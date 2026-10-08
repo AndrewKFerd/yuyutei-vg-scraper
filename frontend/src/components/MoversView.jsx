@@ -150,7 +150,7 @@ const SECTION_META = {
   },
 }
 
-const MoversSection = memo(function MoversSection({ sectionKey, tiles, currency, rates, onSelect }) {
+const MoversSection = memo(function MoversSection({ sectionKey, tiles, currency, rates, onSelect, qtyById, onToggle }) {
   const [expanded, setExpanded] = useState(false)
   const { title, icon, iconClass, description } = SECTION_META[sectionKey]
   const visible = expanded ? tiles : tiles.slice(0, PREVIEW_COUNT)
@@ -183,6 +183,8 @@ const MoversSection = memo(function MoversSection({ sectionKey, tiles, currency,
                 currency={currency}
                 rates={rates}
                 onSelect={onSelect}
+                selectedQty={qtyById.get(tile.card.id) || 0}
+                onToggle={onToggle}
                 delta={tile.delta}
                 caption={tile.caption}
               />
@@ -224,6 +226,8 @@ function MoversView({
   nation,
   onNationChange,
   onSelect,
+  qtyById,
+  onToggle,
 }) {
   // movers: undefined = loading, null = not published yet (404), else the
   // file. moversError = the load itself failed (offline, 5xx) -> Retry.
@@ -433,6 +437,8 @@ function MoversView({
               currency={currency}
               rates={rates}
               onSelect={onSelect}
+              qtyById={qtyById}
+              onToggle={onToggle}
             />
           ))}
         </div>
