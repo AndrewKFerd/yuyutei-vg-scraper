@@ -12,8 +12,8 @@ import { clearHistoryCache } from './history'
  * itself is still built entirely offline (pipeline/build-data.js); this just
  * downloads and parses it once on load.
  *
- * The first visit in a day downloads it fresh; any repeat visit within the
- * same day reuses a local cached copy instead of re-downloading it every
+ * A visit downloads it fresh at most once an hour; any repeat visit within
+ * that hour reuses a local cached copy instead of re-downloading it every
  * time (see catalogCache.js). The resolved object's `fromCache` flag says
  * which one happened. `force` skips the cached copy (see refreshCatalog).
  *

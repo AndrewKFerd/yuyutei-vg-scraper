@@ -9,12 +9,12 @@ import { formatPctMagnitude, pctChange } from '../history'
 // "inline" is a soft tint for use next to text (modal footer).
 const STYLES = {
   overlay: {
-    up: 'bg-green-600 text-white shadow-sm',
+    up: 'bg-green-700 text-white shadow-sm',
     down: 'bg-red-600 text-white shadow-sm',
   },
   inline: {
-    up: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-400',
-    down: 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400',
+    up: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-positive',
+    down: 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-negative',
   },
 }
 

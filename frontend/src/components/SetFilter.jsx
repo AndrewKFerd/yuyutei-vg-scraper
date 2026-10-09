@@ -1,17 +1,26 @@
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
+import Icon from './icons'
+import { IconButton } from './controls'
+import { FIELD } from '../ui'
+import { setLabel } from '../sets'
 
 const MAX_SUGGESTIONS = 50
 
 // Searchable combobox narrowing the grid to one set at a time. A plain
-// <select> doesn't scale well to 300+ sets (scrolling raw slugs like
-// "dzbt16" one by one), so this is a text input + filtered suggestion list
-// instead — type to narrow, then click a suggestion, or use the keyboard:
+// <select> doesn't scale well to 300+ sets, so this is a text input +
+// filtered suggestion list instead — type a product code ("D-BT08", "dbt08"),
+// the set's name or its slug, then click a suggestion, or use the keyboard:
 // ArrowUp/ArrowDown move through the list, Enter picks the highlighted one
-// (or, with nothing highlighted, an exact match or the only suggestion
+// (or, with nothing highlighted, an exact code match or the only suggestion
 // left), Escape backs out. Combines (AND) with the text search and rarity
-// filter, same as before.
-function SetFilter({ options, value, onChange }) {
-  const [query, setQuery] = useState(value)
+// filter.
+//
+// `options` is the catalog's set list ([{ slug, code, name }], newest
+// first -- see sets.js); `value` is the selected slug ('' = all sets).
+function SetFilter({ options, value, onChange, className = '' }) {
+  const bySlug = useMemo(() => new Map(options.map((set) => [set.slug, set])), [options])
+  const labelOf = (slug) => (slug ? setLabel(bySlug.get(slug) || { slug }) : '')
+  const [query, setQuery] = useState(() => labelOf(value))
   const [open, setOpen] = useState(false)
   // Index into `items` of the keyboard-highlighted row, or -1 for none.
   const [activeIndex, setActiveIndex] = useState(-1)
@@ -19,20 +28,34 @@ function SetFilter({ options, value, onChange }) {
   const listRef = useRef(null)
 
   // Keep the displayed text in sync with the selected value when it changes
-  // from outside (e.g. a "clear filters" action elsewhere) — but only while
+  // from outside (a "clear filters" chip, a shared link) — but only while
   // the user isn't actively typing, so we don't stomp on their input.
+  const selectedText = value ? setLabel(bySlug.get(value) || { slug: value }) : ''
   useEffect(() => {
-    if (!open) setQuery(value)
-  }, [value, open])
+    if (!open) setQuery(selectedText)
+  }, [selectedText, open])
+
+  // Lowercased "slug code code-without-hyphens name" per set, built once per catalog.
+  const haystacks = useMemo(
+    () =>
+      new Map(
+        options.map((set) => [
+          set.slug,
+          [set.slug, set.code, set.code?.replace(/-/g, ''), set.name].filter(Boolean).join(' ').toLowerCase(),
+        ])
+      ),
+    [options]
+  )
 
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const matches = q ? options.filter((slug) => slug.toLowerCase().includes(q)) : options
-    return matches.slice(0, MAX_SUGGESTIONS)
-  }, [options, query])
+    // Showing the selected set's own label as the query shouldn't hide every other set.
+    if (!q || q === selectedText.toLowerCase()) return options.slice(0, MAX_SUGGESTIONS)
+    return options.filter((set) => haystacks.get(set.slug).includes(q)).slice(0, MAX_SUGGESTIONS)
+  }, [options, haystacks, query, selectedText])
 
-  // Every pickable row, "All Sets" ('' = clear) first.
-  const items = useMemo(() => ['', ...suggestions], [suggestions])
+  // Every pickable row, "All sets" (null = clear) first.
+  const items = useMemo(() => [null, ...suggestions], [suggestions])
 
   // Keep the highlighted row in view while arrowing through a long list.
   useEffect(() => {
@@ -42,7 +65,7 @@ function SetFilter({ options, value, onChange }) {
 
   const select = (slug) => {
     onChange(slug)
-    setQuery(slug)
+    setQuery(labelOf(slug))
     setOpen(false)
     setActiveIndex(-1)
   }
@@ -52,7 +75,7 @@ function SetFilter({ options, value, onChange }) {
     // suggestion, rather than leaving stray typed text.
     setOpen(false)
     setActiveIndex(-1)
-    setQuery(value)
+    setQuery(selectedText)
   }
 
   const handleKeyDown = (e) => {
@@ -70,7 +93,7 @@ function SetFilter({ options, value, onChange }) {
     } else if (e.key === 'Enter') {
       if (open && activeIndex >= 0 && activeIndex < items.length) {
         e.preventDefault()
-        select(items[activeIndex])
+        select(items[activeIndex]?.slug || '')
         return
       }
       const q = query.trim().toLowerCase()
@@ -79,11 +102,13 @@ function SetFilter({ options, value, onChange }) {
         select('')
         return
       }
-      const exact = options.find((slug) => slug.toLowerCase() === q)
+      const exact = options.find(
+        (set) => set.slug === q || set.code?.toLowerCase() === q || set.code?.replace(/-/g, '').toLowerCase() === q
+      )
       const pick = exact ?? (suggestions.length === 1 ? suggestions[0] : null)
       if (pick) {
         e.preventDefault()
-        select(pick)
+        select(pick.slug)
       }
     } else if (e.key === 'Escape') {
       if (open) {
@@ -98,7 +123,7 @@ function SetFilter({ options, value, onChange }) {
   const optionId = (index) => `${listboxId}-option-${index}`
 
   return (
-    <div className="relative w-full sm:w-56">
+    <div className={`relative ${className}`}>
       <input
         type="text"
         role="combobox"
@@ -112,27 +137,34 @@ function SetFilter({ options, value, onChange }) {
           setOpen(true)
           setActiveIndex(-1)
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={(e) => {
+          setOpen(true)
+          e.target.select()
+        }}
         onBlur={close}
         onKeyDown={handleKeyDown}
-        placeholder="All Sets"
-        aria-label="Search and filter by set"
-        className="w-full rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-100 dark:border-night-600 dark:bg-night-800 dark:text-gold-500 dark:placeholder:text-gold-500/40 dark:focus:border-brand-500 dark:focus:ring-brand-500/20"
+        placeholder="All sets"
+        aria-label="Filter by set: type a set code or name"
+        className={`${FIELD} w-full truncate pl-4 pr-10`}
       />
-      {value && !open && (
-        <button
-          type="button"
+      {value && !open ? (
+        <IconButton
+          icon="close"
+          label="Clear set filter"
+          size="sm"
           onMouseDown={(e) => {
             e.preventDefault()
             select('')
           }}
           // Keyboard activation (Enter/Space fire click, not mousedown).
           onClick={() => select('')}
-          aria-label="Clear set filter"
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-gold-500/60 dark:hover:text-gold-500"
-        >
-          ×
-        </button>
+          className="absolute right-1 top-1/2 -translate-y-1/2"
+        />
+      ) : (
+        <Icon
+          name="chevronDown"
+          className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted"
+        />
       )}
       {open && (
         <ul
@@ -140,9 +172,10 @@ function SetFilter({ options, value, onChange }) {
           id={listboxId}
           role="listbox"
           aria-label="Sets"
-          className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-night-600 dark:bg-night-800"
+          className="absolute z-30 mt-1 max-h-72 w-full min-w-64 overflow-y-auto rounded-lg border border-line bg-surface py-1 text-sm shadow-lg"
         >
-          {items.map((slug, index) => {
+          {items.map((set, index) => {
+            const slug = set?.slug || ''
             const active = index === activeIndex
             const selected = slug === value
             return (
@@ -157,27 +190,31 @@ function SetFilter({ options, value, onChange }) {
                   select(slug)
                 }}
                 onMouseEnter={() => setActiveIndex(index)}
-                className={`cursor-pointer px-3 py-1.5 ${slug ? 'font-mono' : ''} ${
-                  active ? 'bg-brand-50 dark:bg-night-700' : ''
-                } ${
-                  selected
-                    ? 'font-semibold text-brand-700 dark:text-brand-400'
-                    : slug
-                      ? 'text-slate-700 dark:text-gold-500'
-                      : 'text-slate-500 dark:text-gold-500/70'
+                className={`flex cursor-pointer items-baseline gap-2 px-3 py-2 ${active ? 'bg-surface-2' : ''} ${
+                  selected ? 'text-accent' : 'text-fg'
                 }`}
               >
-                {slug || 'All Sets'}
+                {set ? (
+                  <>
+                    {set.code && <span className="shrink-0 font-mono text-xs font-semibold">{set.code}</span>}
+                    <span className={`truncate ${set.code ? 'text-fg-muted' : ''}`} lang={set.code ? 'ja' : undefined}>
+                      {set.name || (set.code ? '' : set.slug)}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-fg-muted">All sets</span>
+                )}
+                {selected && <Icon name="check" className="ml-auto h-4 w-4 self-center" />}
               </li>
             )
           })}
           {suggestions.length === 0 && (
-            <li role="presentation" className="px-3 py-1.5 text-slate-400 dark:text-gold-500/50">
+            <li role="presentation" className="px-3 py-2 text-fg-subtle">
               No matching sets
             </li>
           )}
-          {options.length > MAX_SUGGESTIONS && suggestions.length === MAX_SUGGESTIONS && (
-            <li role="presentation" className="px-3 py-1 text-[11px] text-slate-400 dark:text-gold-500/50">
+          {suggestions.length === MAX_SUGGESTIONS && options.length > MAX_SUGGESTIONS && (
+            <li role="presentation" className="px-3 py-1.5 text-xs text-fg-subtle">
               Keep typing to narrow further…
             </li>
           )}

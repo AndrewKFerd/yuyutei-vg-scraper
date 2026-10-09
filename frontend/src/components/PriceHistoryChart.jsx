@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from 'react'
 import { formatPrice } from '../currency'
 import { entryAt, formatDate, formatDateTime } from '../history'
 import { stockInfo } from '../stock'
+import { Segmented } from './controls'
 
 // Hand-rolled inline SVG (no chart library -- the frontend has zero runtime
 // dependencies beyond React, and this is one small step chart).
@@ -191,34 +192,24 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
   return (
     <div>
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-gold-500/60">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
           Price history
         </h3>
-        <div className="flex gap-1" role="group" aria-label="Chart range">
-          {RANGES.map((r) => (
-            <button
-              key={r.key}
-              type="button"
-              onClick={() => {
-                setRange(r.key)
-                setCursor(null)
-              }}
-              aria-pressed={range === r.key}
-              className={`rounded px-2.5 py-1.5 text-[11px] font-semibold transition ${
-                range === r.key
-                  ? 'bg-brand-600 text-white dark:bg-brand-500 dark:text-night-950'
-                  : 'text-slate-500 hover:bg-slate-100 dark:text-gold-500/70 dark:hover:bg-night-700'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="Chart range"
+          size="sm"
+          options={RANGES.map((r) => [r.key, r.label])}
+          value={range}
+          onChange={(key) => {
+            setRange(key)
+            setCursor(null)
+          }}
+        />
       </div>
 
-      <p className="mt-1 min-h-[1.25rem] truncate text-xs text-slate-500 dark:text-gold-500/70">
+      <p className="mt-1 min-h-[1.25rem] truncate text-xs text-fg-muted">
         {readout.before}
-        <span className="font-semibold text-slate-700 dark:text-gold-500">{readout.value}</span>
+        <span className="font-semibold text-fg">{readout.value}</span>
         {readout.after}
       </p>
       <p className="sr-only" aria-live="polite">
@@ -228,7 +219,7 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
       <div className="mt-1 flex items-start">
         {/* Y labels. The invisible copy sizes the gutter to the widest
             label; the visible ones sit at the max/min line heights. */}
-        <div className="relative h-36 shrink-0 pr-1.5 text-right text-[10px] tabular-nums text-slate-400 sm:h-40 dark:text-gold-500/60">
+        <div className="relative h-36 shrink-0 pr-1.5 text-right text-[11px] tabular-nums text-fg-subtle sm:h-40">
           <div aria-hidden="true" className="invisible h-0 overflow-hidden whitespace-nowrap">
             <div>{fmt(maxP)}</div>
             <div>{fmt(minP)}</div>
@@ -264,7 +255,7 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
             onKeyDown={handleKeyDown}
             onBlur={() => setCursor(null)}
             aria-label="Price history chart. Use the left and right arrow keys to step through changes."
-            className="relative h-36 cursor-crosshair touch-pan-y select-none rounded-sm border-b border-slate-200 bg-slate-50 outline-none focus-visible:ring-2 focus-visible:ring-brand-400 sm:h-40 dark:border-night-600 dark:bg-night-900/50"
+            className="relative h-36 cursor-crosshair touch-pan-y select-none rounded-sm border-b border-line bg-bg outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-40"
           >
             {gaps.map(([a, b]) => (
               <div
@@ -283,7 +274,7 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
               className="absolute inset-0 h-full w-full overflow-visible"
             >
               {!singlePrice && (
-                <g className="stroke-slate-200 dark:stroke-night-700" strokeWidth="1">
+                <g className="stroke-line" strokeWidth="1">
                   <line x1={0} x2={VB_W} y1={y(maxP)} y2={y(maxP)} vectorEffect="non-scaling-stroke" />
                   <line x1={0} x2={VB_W} y1={y(minP)} y2={y(minP)} vectorEffect="non-scaling-stroke" />
                 </g>
@@ -316,7 +307,7 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
                     y={VB_H - h}
                     width={w - inset * 2}
                     height={h}
-                    className="fill-brand-200 dark:fill-brand-800/60"
+                    className="fill-brand-200 dark:fill-brand-800/70"
                   />
                 )
               })}
@@ -328,14 +319,14 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 vectorEffect="non-scaling-stroke"
-                className="stroke-brand-600 dark:stroke-brand-400"
+                className="stroke-accent"
               />
             </svg>
 
             {/* End dot with a surface-colored ring (HTML so it stays round). */}
             <span
               aria-hidden="true"
-              className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-600 ring-2 ring-slate-50 dark:bg-brand-400 dark:ring-night-900"
+              className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent ring-2 ring-bg"
               style={{ left: '100%', top: pct(y(last.price), VB_H) }}
             />
 
@@ -343,33 +334,33 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
               <>
                 <span
                   aria-hidden="true"
-                  className="pointer-events-none absolute inset-y-0 w-px bg-slate-400 dark:bg-gold-500/50"
+                  className="pointer-events-none absolute inset-y-0 w-px bg-fg-subtle"
                   style={{ left: pct(x(cursor), VB_W) }}
                 />
                 <span
                   aria-hidden="true"
-                  className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-600 ring-2 ring-slate-50 dark:bg-brand-400 dark:ring-night-900"
+                  className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent ring-2 ring-bg"
                   style={{ left: pct(x(cursor), VB_W), top: pct(y(cursorSeg.price), VB_H) }}
                 />
               </>
             )}
           </div>
 
-          <div className="mt-1 flex justify-between gap-2 text-[10px] tabular-nums text-slate-400 dark:text-gold-500/60">
+          <div className="mt-1 flex justify-between gap-2 text-[11px] tabular-nums text-fg-subtle">
             <span>{formatDate(start)}</span>
             <span>{formatDate(end)}</span>
           </div>
         </div>
       </div>
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-400 dark:text-gold-500/60">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-subtle">
         <span className="inline-flex items-center gap-1">
-          <span aria-hidden="true" className="h-0.5 w-3 rounded-full bg-brand-600 dark:bg-brand-400" />
+          <span aria-hidden="true" className="h-0.5 w-3 rounded-full bg-accent" />
           Price
         </span>
         {maxStock > 0 && (
           <span className="inline-flex items-center gap-1">
-            <span aria-hidden="true" className="h-2 w-2 rounded-[1px] bg-brand-200 dark:bg-brand-800/60" />
+            <span aria-hidden="true" className="h-2 w-2 rounded-[1px] bg-brand-200 dark:bg-brand-800/70" />
             Stock
           </span>
         )}
@@ -401,19 +392,19 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
 
       {/* Table-view twin of the chart: every recorded change, newest first. */}
       <details className="mt-2 text-xs">
-        <summary className="cursor-pointer text-slate-400 hover:text-slate-600 dark:text-gold-500/60 dark:hover:text-gold-500">
+        <summary className="cursor-pointer text-fg-subtle hover:text-fg">
           All recorded changes ({series.length})
         </summary>
-        <ol className="mt-1.5 max-h-48 overflow-y-auto rounded border border-slate-100 dark:border-night-600">
+        <ol className="mt-1.5 max-h-48 overflow-y-auto rounded border border-line">
           {[...series].reverse().map(([t, price, stock]) => (
             <li
               key={t}
-              className="flex justify-between gap-3 border-b border-slate-100 px-2 py-1 tabular-nums last:border-b-0 dark:border-night-700"
+              className="flex justify-between gap-3 border-b border-line px-2 py-1 tabular-nums last:border-b-0"
             >
-              <span className="text-slate-500 dark:text-gold-500/70">{formatDateTime(t)}</span>
+              <span className="text-fg-muted">{formatDateTime(t)}</span>
               <span className="text-right">
-                <span className="font-semibold text-slate-700 dark:text-gold-500">{fmt(price)}</span>
-                <span className="ml-2 text-slate-400 dark:text-gold-500/60">{stockInfo(stock).label}</span>
+                <span className="font-semibold text-fg">{fmt(price)}</span>
+                <span className="ml-2 text-fg-subtle">{stockInfo(stock).label}</span>
               </span>
             </li>
           ))}

@@ -1,7 +1,10 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import CardTile from './CardTile'
-import CurrencySelector from './CurrencySelector'
+import { GridSkeleton } from './CardGrid'
+import Icon from './icons'
+import { Button, Segmented, Select } from './controls'
 import { formatPrice } from '../currency'
+import { CONTAINER, GRID } from '../ui'
 import {
   MOVER_WINDOWS,
   describeObservedAt,
@@ -138,51 +141,82 @@ const SOLD_OUT = () => 0
 const ENTRY_STOCK = (entry, card) => (entry.stock !== undefined ? entry.stock : card.stock)
 
 const SECTION_META = {
-  risers: { title: 'Biggest risers', icon: '▲', iconClass: 'text-green-600 dark:text-green-400' },
-  drops: { title: 'Biggest drops', icon: '▼', iconClass: 'text-red-600 dark:text-red-400' },
-  soldOut: { title: 'Just sold out', icon: '⛔', iconClass: 'text-red-600 dark:text-red-400' },
-  restocked: { title: 'Back in stock', icon: '↺', iconClass: 'text-brand-600 dark:text-brand-400' },
+  risers: { title: 'Biggest risers', short: 'Risers', icon: 'trendUp', iconClass: 'text-positive' },
+  drops: { title: 'Biggest drops', short: 'Drops', icon: 'trendDown', iconClass: 'text-negative' },
+  soldOut: { title: 'Just sold out', short: 'Sold out', icon: 'soldOut', iconClass: 'text-negative' },
+  restocked: { title: 'Back in stock', short: 'Restocked', icon: 'restock', iconClass: 'text-accent' },
   sellingFast: {
     title: 'Selling fast',
-    icon: '↯',
-    iconClass: 'text-gold-800 dark:text-gold-500',
+    short: 'Selling fast',
+    icon: 'bolt',
+    iconClass: 'text-warning',
     description: 'Largest stock drops over the window — listings with a stock count only.',
   },
+}
+
+const sectionId = (key) => `movers-${key}`
+
+// In-page links to each list with its size, so the fifth list is one tap
+// away instead of four screens of scrolling.
+function SectionJumps({ sections }) {
+  return (
+    <nav aria-label="Jump to list" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+      {Object.entries(SECTION_META).map(([key, { short, icon, iconClass }]) => (
+        <a
+          key={key}
+          href={`#${sectionId(key)}`}
+          onClick={(e) => {
+            e.preventDefault()
+            document.getElementById(sectionId(key))?.scrollIntoView({
+              block: 'start',
+              behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+            })
+          }}
+          className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-full border border-line-strong bg-surface px-3 text-xs font-medium text-fg shadow-sm transition hover:border-accent hover:text-accent"
+        >
+          <Icon name={icon} className={`h-4 w-4 ${iconClass}`} />
+          {short}
+          <span className="tabular-nums text-fg-subtle">{sections[key].length.toLocaleString()}</span>
+        </a>
+      ))}
+    </nav>
+  )
 }
 
 const MoversSection = memo(function MoversSection({ sectionKey, tiles, currency, rates, onSelect, qtyById, onToggle }) {
   const [expanded, setExpanded] = useState(false)
   const { title, icon, iconClass, description } = SECTION_META[sectionKey]
   const visible = expanded ? tiles : tiles.slice(0, PREVIEW_COUNT)
-  const headingId = `movers-${sectionKey}`
+  const headingId = `${sectionId(sectionKey)}-heading`
+  // The modal's previous/next walk this list (all of it, not just the preview).
+  const list = useMemo(() => tiles.map((tile) => tile.card), [tiles])
+  const select = useCallback((card) => onSelect(card, list), [onSelect, list])
 
   return (
-    <section aria-labelledby={headingId}>
-      <div className="px-4 pb-2">
-        <h2 id={headingId} className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-gold-500">
-          <span aria-hidden="true" className={iconClass}>
-            {icon}
-          </span>
+    <section id={sectionId(sectionKey)} aria-labelledby={headingId} className="scroll-mt-4">
+      <div className="pb-2.5">
+        <h2 id={headingId} className="flex items-center gap-2 text-base font-semibold text-fg">
+          <Icon name={icon} className={`h-5 w-5 ${iconClass}`} />
           {title}
-          <span className="text-xs font-normal text-slate-400 dark:text-gold-500/50">
-            ({tiles.length.toLocaleString()})
-          </span>
+          <span className="text-sm font-normal tabular-nums text-fg-subtle">{tiles.length.toLocaleString()}</span>
         </h2>
-        {description && <p className="mt-0.5 text-[11px] text-slate-400 dark:text-gold-500/50">{description}</p>}
+        {description && <p className="mt-0.5 text-xs text-fg-muted">{description}</p>}
       </div>
 
       {tiles.length === 0 ? (
-        <p className="px-4 text-xs italic text-slate-400 dark:text-gold-500/50">No changes in this window.</p>
+        <p className="rounded-lg border border-dashed border-line px-4 py-6 text-center text-sm text-fg-subtle">
+          No changes in this window.
+        </p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+          <div className={GRID}>
             {visible.map((tile) => (
               <CardTile
                 key={tile.card.id}
                 card={tile.card}
                 currency={currency}
                 rates={rates}
-                onSelect={onSelect}
+                onSelect={select}
                 selectedQty={qtyById.get(tile.card.id) || 0}
                 onToggle={onToggle}
                 delta={tile.delta}
@@ -192,14 +226,9 @@ const MoversSection = memo(function MoversSection({ sectionKey, tiles, currency,
           </div>
           {tiles.length > PREVIEW_COUNT && (
             <div className="mt-3 text-center">
-              <button
-                type="button"
-                onClick={() => setExpanded((v) => !v)}
-                aria-expanded={expanded}
-                className="rounded-full px-3 py-1.5 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:underline dark:text-brand-400 dark:hover:bg-night-800"
-              >
-                {expanded ? 'Show fewer' : `Show all (${tiles.length.toLocaleString()})`}
-              </button>
+              <Button size="sm" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
+                {expanded ? 'Show fewer' : `Show all ${tiles.length.toLocaleString()}`}
+              </Button>
             </div>
           )}
         </>
@@ -208,16 +237,12 @@ const MoversSection = memo(function MoversSection({ sectionKey, tiles, currency,
   )
 })
 
-const selectClass =
-  'w-full rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100 sm:w-auto dark:border-night-600 dark:bg-night-800 dark:text-gold-500 dark:focus:border-brand-500 dark:focus:ring-brand-500/20'
-
 function MoversView({
   cardsById,
   catalogReady,
   dataVersion,
   currency,
   rates,
-  onCurrencyChange,
   windowKey,
   onWindowChange,
   minPrice,
@@ -321,48 +346,29 @@ function MoversView({
   const loading = !catalogReady || (movers === undefined && !failed)
 
   return (
-    <div className="pb-10">
-      <div className="mx-auto mt-3 flex max-w-3xl flex-wrap items-center justify-center gap-2 px-4">
-        <div
-          role="group"
-          aria-label="Time window"
-          className="flex w-full rounded-full border border-slate-300 bg-white p-1 shadow-sm sm:w-auto dark:border-night-600 dark:bg-night-800"
-        >
-          {MOVER_WINDOWS.map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => onWindowChange(key)}
-              aria-pressed={windowKey === key}
-              className={`flex-1 rounded-full px-4 py-1 text-sm font-medium transition sm:flex-none ${
-                windowKey === key
-                  ? 'bg-brand-600 text-white dark:bg-brand-500 dark:text-night-950'
-                  : 'text-slate-600 hover:text-brand-700 dark:text-gold-500/80 dark:hover:text-brand-400'
-              }`}
-            >
-              {key}
-            </button>
-          ))}
-        </div>
-        <select
+    <div className={`${CONTAINER} pb-10 pt-5`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Segmented
+          label="Time window"
+          options={MOVER_WINDOWS.map((key) => [key, key])}
+          value={windowKey}
+          onChange={onWindowChange}
+          className="w-full sm:w-auto"
+        />
+        <Select
           value={minPrice}
-          onChange={(e) => onMinPriceChange(Number(e.target.value))}
-          aria-label="Minimum price (in JPY)"
-          className={selectClass}
+          onChange={(value) => onMinPriceChange(Number(value))}
+          label="Minimum price (in JPY)"
+          className="flex-1 sm:flex-none"
         >
           {MIN_PRICE_OPTIONS.map((value) => (
             <option key={value} value={value}>
-              Min price ¥{value.toLocaleString('en-US')}
+              {value === 0 ? 'Any price' : `¥${value.toLocaleString('en-US')} and up`}
             </option>
           ))}
-        </select>
+        </Select>
         {nationGroups.length > 0 && (
-          <select
-            value={nation}
-            onChange={(e) => onNationChange(e.target.value)}
-            aria-label="Nation"
-            className={selectClass}
-          >
+          <Select value={nation} onChange={onNationChange} label="Nation" className="flex-1 sm:flex-none">
             <option value="">All nations</option>
             {nationGroups.map(([group, list]) => (
               <optgroup key={group} label={group}>
@@ -373,24 +379,19 @@ function MoversView({
                 ))}
               </optgroup>
             ))}
-          </select>
+          </Select>
         )}
-        <CurrencySelector value={currency} onChange={onCurrencyChange} />
       </div>
 
-      <div className="mx-auto mt-3 max-w-xl px-4 text-center text-xs text-slate-500 dark:text-gold-500/70">
+      <div className="pt-4 text-sm text-fg-muted">
         {loading ? (
           'Loading market movers…'
         ) : failed ? (
-          <p>
-            Couldn’t load market data.{' '}
-            <button
-              type="button"
-              onClick={retry}
-              className="font-semibold text-brand-600 underline-offset-2 hover:underline dark:text-brand-400"
-            >
-              Retry
-            </button>
+          <p role="alert" className="flex flex-wrap items-center gap-x-2">
+            Couldn’t load market data.
+            <Button variant="link" size="inline" onClick={retry}>
+              Try again
+            </Button>
           </p>
         ) : movers === null || !win ? (
           'Market data isn’t available yet — check back after the next refresh.'
@@ -400,48 +401,47 @@ function MoversView({
               Price and stock moves over the last {windowPeriod(windowKey)} · updated{' '}
               <span title={formatDateTime(movers.asOf)}>{timeAgo(movers.asOf)}</span>
             </p>
-            {win.complete === false && (
-              <p className="mt-1 text-gold-800 dark:text-gold-500">
-                {history
-                  ? `History only goes back to ${formatDate(history.trackingSince, { year: true })}, so this window is partial.`
-                  : 'History doesn’t cover this whole window yet, so it is partial.'}
-              </p>
-            )}
-            {sinceGap && (
-              <p className="mt-1 text-gold-800 dark:text-gold-500">
-                No observations between {formatBetween(sinceGap[0], sinceGap[1])}, so some of these changes may be
-                older than {windowPeriod(windowKey)}.
+            {(win.complete === false || sinceGap) && (
+              <p className="mt-2 flex items-start gap-2 rounded-lg border border-highlight-line bg-highlight px-3 py-2 text-xs text-fg">
+                <Icon name="info" className="mt-px h-4 w-4 text-warning" />
+                <span>
+                  {win.complete === false &&
+                    (history
+                      ? `History only goes back to ${formatDate(history.trackingSince, { year: true })}, so this window is partial. `
+                      : 'History doesn’t cover this whole window yet, so it is partial. ')}
+                  {sinceGap &&
+                    `No observations between ${formatBetween(sinceGap[0], sinceGap[1])}, so some of these changes may be older than ${windowPeriod(windowKey)}.`}
+                </span>
               </p>
             )}
           </>
         )}
       </div>
 
-      {loading && (
-        <div className="mt-6 grid grid-cols-2 gap-3 px-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="aspect-[100/140] w-full animate-pulse rounded-md bg-slate-200 dark:bg-night-700" />
-          ))}
-        </div>
-      )}
+      {loading && <GridSkeleton count={8} className="mt-6" />}
 
       {sections && (
-        <div className="mt-6 flex flex-col gap-8">
-          {Object.keys(SECTION_META).map((key) => (
-            <MoversSection
-              // Keyed on the filters too, so "Show all" collapses again
-              // when the window, price floor or nation changes.
-              key={`${key}-${windowKey}-${minPrice}-${nation}`}
-              sectionKey={key}
-              tiles={sections[key]}
-              currency={currency}
-              rates={rates}
-              onSelect={onSelect}
-              qtyById={qtyById}
-              onToggle={onToggle}
-            />
-          ))}
-        </div>
+        <>
+          <div className="pt-4">
+            <SectionJumps sections={sections} />
+          </div>
+          <div className="mt-6 flex flex-col gap-10">
+            {Object.keys(SECTION_META).map((key) => (
+              <MoversSection
+                // Keyed on the filters too, so "Show all" collapses again
+                // when the window, price floor or nation changes.
+                key={`${key}-${windowKey}-${minPrice}-${nation}`}
+                sectionKey={key}
+                tiles={sections[key]}
+                currency={currency}
+                rates={rates}
+                onSelect={onSelect}
+                qtyById={qtyById}
+                onToggle={onToggle}
+              />
+            ))}
+          </div>
+        </>
       )}
     </div>
   )

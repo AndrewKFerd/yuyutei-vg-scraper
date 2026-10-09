@@ -117,7 +117,7 @@ function computeTotals(lines) {
  * Items are { id, qty, at, snap } where `at` is the time (ms) the snapshot's
  * price/stock is known to be from. Newer data wins: a Movers tile can carry a
  * fresher price than the catalog, which then stands until a catalog built
- * after it arrives (Refresh now), at which point every line updates.
+ * after it arrives (the refresh button), at which point every line updates.
  */
 export function useCalculator({ cardsById, catalogReady, catalogGeneratedAt }) {
   const [items, setItems] = useState(readStored)

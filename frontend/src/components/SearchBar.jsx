@@ -1,14 +1,46 @@
-function SearchBar({ value, onChange }) {
+import { useRef } from 'react'
+import Icon from './icons'
+import { IconButton } from './controls'
+import { FIELD } from '../ui'
+
+// Autofocus only where it can't pop a soft keyboard over the page: phones
+// and tablets (coarse pointers) start with the grid in view instead.
+const FINE_POINTER = typeof window !== 'undefined' && window.matchMedia?.('(pointer: fine)').matches
+
+function SearchBar({ value, onChange, className = '' }) {
+  const inputRef = useRef(null)
   return (
-    <div className="mx-auto w-full max-w-xl px-4">
+    <div role="search" className={`relative ${className}`}>
+      <Icon name="search" className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-fg-subtle" />
       <input
-        type="text"
+        ref={inputRef}
+        type="search"
+        enterKeyHint="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Insert card name"
-        autoFocus
-        className="w-full rounded-full border border-slate-300 bg-white px-5 py-3 text-base text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-100 dark:border-night-600 dark:bg-night-800 dark:text-gold-500 dark:placeholder:text-gold-500/40 dark:focus:border-brand-500 dark:focus:ring-brand-500/20"
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && value) {
+            e.preventDefault()
+            onChange('')
+          }
+        }}
+        placeholder="Name or set code"
+        aria-label="Search cards"
+        autoFocus={FINE_POINTER}
+        className={`${FIELD} h-11 w-full pl-11 pr-11 text-base [&::-webkit-search-cancel-button]:appearance-none`}
       />
+      {value && (
+        <IconButton
+          icon="close"
+          label="Clear search"
+          size="sm"
+          onClick={() => {
+            onChange('')
+            inputRef.current?.focus()
+          }}
+          className="absolute right-1.5 top-1/2 -translate-y-1/2"
+        />
+      )}
     </div>
   )
 }

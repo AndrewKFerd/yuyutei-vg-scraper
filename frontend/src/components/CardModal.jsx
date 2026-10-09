@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import RarityBadge from './RarityBadge'
 import DeltaChip from './DeltaChip'
 import PriceHistoryChart from './PriceHistoryChart'
+import Icon from './icons'
+import { Button, IconButton } from './controls'
 import { formatPrice } from '../currency'
 import {
   describeChangeTime,
@@ -55,18 +57,16 @@ function Lightbox({ src, alt, onClose }) {
       }}
       className="fixed inset-0 z-[60] flex cursor-zoom-out items-center justify-center bg-night-950/90 p-3 outline-none"
     >
-      <img src={src} alt={alt} className="max-h-full max-w-full rounded-md object-contain shadow-2xl" />
+      <img src={src} alt={alt} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" />
       {/* Pointer users already closed it on mousedown above; onClick is
           for keyboard activation (Enter/Space fire click, not mousedown). */}
       <button
         type="button"
         onClick={onClose}
         aria-label="Close full-size image"
-        className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full bg-night-800/80 text-gold-500 hover:bg-night-700"
+        className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full bg-night-800/80 text-white hover:bg-night-700"
       >
-        <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-          <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" />
-        </svg>
+        <Icon name="close" />
       </button>
     </div>
   )
@@ -77,16 +77,35 @@ function wikiUrl(title) {
   return `https://cardfight.fandom.com/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`
 }
 
-// Small "Grade 3" / "Power 13000" style pills next to the rarity badge.
+// Small "Grade 3" / "Power 13000" style pills next to the set code.
 // Filled from the official English match, the wiki fan translation, or the
 // yuyu-tei detail scrape, in that order (see pipeline/build-data.js) --
 // null/undefined when none had it, in which case the pill isn't rendered.
 function StatPill({ value }) {
   if (value === null || value === undefined || value === '') return null
+  return <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-fg-muted">{value}</span>
+}
+
+// Longer than this and the skill box starts clamped, with "Show full text".
+const SKILL_PREVIEW_CHARS = 240
+const SKILL_PREVIEW_LINES = 4
+
+function SkillBox({ text, lang }) {
+  const [expanded, setExpanded] = useState(false)
+  const long = text.length > SKILL_PREVIEW_CHARS || text.split('\n').length > SKILL_PREVIEW_LINES
   return (
-    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-night-700 dark:text-gold-500">
-      {value}
-    </span>
+    <div>
+      {/* The clamp sits on the inner text, not the padded box, or the
+          fifth line would peek through the bottom padding. */}
+      <div lang={lang} className="rounded-lg border border-highlight-line bg-highlight p-3 text-sm leading-relaxed text-fg">
+        <p className={`whitespace-pre-line ${long && !expanded ? 'line-clamp-4' : ''}`}>{text}</p>
+      </div>
+      {long && (
+        <Button variant="link" size="inline" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded} className="mt-1">
+          {expanded ? 'Show less' : 'Show full text'}
+        </Button>
+      )}
+    </div>
   )
 }
 
@@ -95,48 +114,35 @@ function StatPill({ value }) {
 // "no skill text" must not be claimed until it has actually loaded.
 function SkillText({ card, status, onRetry }) {
   if (status === 'loading') {
-    return <p className="animate-pulse text-sm text-slate-400 dark:text-gold-500/50">Loading skill text…</p>
+    return <div role="status" aria-label="Loading skill text" className="h-20 animate-pulse rounded-lg bg-surface-2" />
   }
   if (status === 'error') {
     return (
-      <p
-        role="alert"
-        className="rounded-md border border-dashed border-red-300 p-3 text-sm text-red-600 dark:border-red-400/40 dark:text-red-400"
-      >
+      <p role="alert" className="rounded-lg border border-dashed border-line p-3 text-sm text-negative">
         Couldn&apos;t load the skill text.{' '}
-        <button type="button" onClick={onRetry} className="font-semibold underline underline-offset-2">
-          Retry
-        </button>
+        <Button variant="link" size="inline" onClick={onRetry} className="text-sm">
+          Try again
+        </Button>
       </p>
     )
   }
 
   if (card.skillTextEn) {
-    return (
-      <div className="rounded-md border border-gold-300 bg-gold-50 p-3 text-sm leading-relaxed whitespace-pre-line text-slate-800 dark:border-gold-700/50 dark:bg-night-700 dark:text-gold-500">
-        {card.skillTextEn}
-      </div>
-    )
+    // Keyed on the text so a different card starts collapsed again.
+    return <SkillBox key={card.skillTextEn} text={card.skillTextEn} />
   }
 
   if (card.skillTextJp) {
     return (
       <div>
-        <div
-          lang="ja"
-          className="rounded-md border border-gold-300 bg-gold-50 p-3 text-sm leading-relaxed whitespace-pre-line text-slate-800 dark:border-gold-700/50 dark:bg-night-700 dark:text-gold-500"
-        >
-          {card.skillTextJp}
-        </div>
-        <p className="mt-1.5 text-[11px] text-slate-400 dark:text-gold-500/50">
-          Japanese only — no official English release yet.
-        </p>
+        <SkillBox key={card.skillTextJp} text={card.skillTextJp} lang="ja" />
+        <p className="mt-1.5 text-xs text-fg-subtle">Japanese only — no official English release yet.</p>
       </div>
     )
   }
 
   return (
-    <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm italic text-slate-400 dark:border-night-600 dark:text-gold-500/50">
+    <p className="rounded-lg border border-dashed border-line p-3 text-sm text-fg-subtle">
       No skill text available for this card yet.
     </p>
   )
@@ -147,28 +153,25 @@ function SkillText({ card, status, onRetry }) {
 function StaleCatalogNote({ latest, catalogMinute, currency, rates, onRefresh, isRefreshing, refreshError }) {
   const [at, price, stock] = latest
   return (
-    <div className="rounded-md border border-gold-300 bg-gold-50 px-3 py-2 text-xs leading-relaxed text-slate-700 dark:border-gold-700/50 dark:bg-night-700 dark:text-gold-500">
+    <div className="rounded-lg border border-highlight-line bg-highlight px-3 py-2 text-xs leading-relaxed text-fg">
       <span className="font-semibold">Newer data:</span> {formatPrice(price, currency, rates)} ·{' '}
       {stockInfo(stock).label} as of {formatDateTime(at)} — the price and stock shown below are from your cached
       catalog ({formatDateTime(catalogMinute)}).{' '}
       {onRefresh && (
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-          className="font-semibold text-brand-700 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 dark:text-brand-400 dark:disabled:text-night-500"
-        >
+        <Button variant="link" size="inline" onClick={onRefresh} disabled={isRefreshing}>
           {isRefreshing ? 'Refreshing…' : 'Refresh now'}
-        </button>
+        </Button>
       )}
       {onRefresh && refreshError && (
-        <span role="alert" className="mt-1 block text-red-600 dark:text-red-400">
+        <span role="alert" className="mt-1 block text-negative">
           Refresh failed ({refreshError}).
         </span>
       )}
     </div>
   )
 }
+
+const SECTION_HEADING = 'text-xs font-semibold uppercase tracking-wide text-fg-subtle'
 
 // "Price history" block. `history` is undefined while loading, null when
 // the history file isn't available (then the section just doesn't show --
@@ -184,15 +187,11 @@ function PriceHistorySection({
   refreshError,
 }) {
   if (history === undefined) {
-    return <p className="animate-pulse text-xs text-slate-400 dark:text-gold-500/50">Loading price history…</p>
+    return <p className="animate-pulse text-xs text-fg-subtle">Loading price history…</p>
   }
   if (history === null) return null
 
-  const heading = (
-    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-gold-500/60">
-      Price history
-    </h3>
-  )
+  const heading = <h3 className={SECTION_HEADING}>Price history</h3>
 
   const series = getSeries(history, card.id)
   // Cards whose only entry is the tracking baseline are stripped from the
@@ -201,7 +200,7 @@ function PriceHistorySection({
     return (
       <section className="flex flex-col gap-1">
         {heading}
-        <p className="text-xs text-slate-500 dark:text-gold-500/70">
+        <p className="text-xs text-fg-muted">
           Price unchanged since tracking began ({formatDate(history.trackingSince, { year: true })}).
         </p>
       </section>
@@ -215,7 +214,7 @@ function PriceHistorySection({
   // single point in time, which reads better as text.
   const chartable = history.lastRun - firstSeen >= 60
   const lastPct = lastChange ? pctChange(lastChange.from, lastChange.to) : null
-  const strong = 'font-semibold text-slate-700 dark:text-gold-500'
+  const strong = 'font-semibold text-fg'
   const catalogMinute = isoToMinute(catalogGeneratedAt)
   const newer = newerThanCatalog(series, card, catalogMinute)
 
@@ -244,7 +243,7 @@ function PriceHistorySection({
       ) : (
         heading
       )}
-      <div className="flex flex-col gap-0.5 text-xs text-slate-500 dark:text-gold-500/70">
+      <div className="flex flex-col gap-0.5 text-xs text-fg-muted">
         {changes > 0 ? (
           <p>
             Low <span className={strong}>{fmt(low)}</span> · High <span className={strong}>{fmt(high)}</span> ·{' '}
@@ -260,11 +259,7 @@ function PriceHistorySection({
           <p>
             Last change{' '}
             {lastPct !== null && (
-              <span
-                className={`font-semibold ${
-                  lastPct > 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                }`}
-              >
+              <span className={`font-semibold ${lastPct > 0 ? 'text-positive' : 'text-negative'}`}>
                 {formatPctSigned(lastPct)}
               </span>
             )}{' '}
@@ -278,66 +273,73 @@ function PriceHistorySection({
   )
 }
 
-// Footer control for the price calculator: add, or (once added) set the
-// quantity / remove. Going past the card's stock is allowed -- the warning
-// is just that -- since people buy for later or expect a restock.
+// Footer control for the price list: add, or (once added) set the quantity
+// / remove. Going past the card's stock is allowed -- the warning is just
+// that -- since people buy for later or expect a restock.
 function CalcControl({ card, qty, onChange }) {
   const name = card.nameEn || card.nameJp
   const stock = card.stock
   if (qty === 0) {
     return (
-      <div data-calc-modal className="flex flex-col items-end gap-1">
-        <button
-          type="button"
+      <div data-calc-modal className="flex flex-col items-start gap-1 sm:items-end">
+        <Button
+          variant="primary"
           data-calc-add
           onClick={() => {
             onChange(card, 1)
             // This button is replaced by the stepper; keep focus in the control.
             focusSoon(() => document.querySelector('[data-calc-modal] button[aria-label^="Increase"]'))
           }}
-          className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 dark:bg-brand-500 dark:text-night-950 dark:hover:bg-brand-400"
         >
-          Add to calculator
-        </button>
-        {stock === 0 && (
-          <span className="text-[11px] text-slate-500 dark:text-gold-500/70">
-            Out of stock — you can still add it
-          </span>
-        )}
+          <Icon name="plus" className="h-4 w-4" />
+          Add to price list
+        </Button>
+        {stock === 0 && <span className="text-xs text-fg-muted">Out of stock — you can still add it</span>}
       </div>
     )
   }
   return (
     <div data-calc-modal className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <QtyStepper value={qty} onChange={(n) => onChange(card, n)} label={name} />
-      <button
-        type="button"
+      <Button
+        variant="danger"
+        size="inline"
         onClick={() => {
           onChange(card, 0)
           focusSoon(() => document.querySelector('[data-calc-modal] [data-calc-add]'))
         }}
-        // -my-2 py-2 keeps a 32px tap target without changing the row height.
-        className="-my-2 inline-flex min-h-8 items-center px-1 py-2 text-xs text-red-600 underline-offset-2 hover:underline dark:text-red-400"
+        className="px-1"
       >
         Remove
-      </button>
-      {stock > 0 && qty > stock && (
-        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">Only {stock} in stock</span>
-      )}
+      </Button>
+      {stock > 0 && qty > stock && <span className="text-xs font-semibold text-warning">Only {stock} in stock</span>}
     </div>
   )
+}
+
+// Arrow keys step between cards -- unless they're doing something else
+// already (moving a text cursor, a select, the chart's own cursor).
+function isArrowTargetBusy(e) {
+  if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return true
+  const el = e.target
+  return el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))
 }
 
 // `catalogGeneratedAt` / `onRefresh` / `isRefreshing` / `refreshError` drive
 // the "newer data than your cached catalog" note; `dataVersion` changes
 // after a catalog refresh (which also drops the history cache) so history
-// reloads. `calcQty` / `onCalcChange(card, qty)` are the price calculator's
-// quantity for this card and its setter (qty 0 removes).
+// reloads. `calcQty` / `onCalcChange(card, qty)` are the price list's
+// quantity for this card and its setter (qty 0 removes). `onPrev` / `onNext`
+// (null at either end, or when the card wasn't opened from a list) and
+// `position` ({ index, total }) drive the previous/next controls.
 function CardModal({
   card,
   currency,
   rates,
   onClose,
+  onPrev,
+  onNext,
+  position,
   catalogGeneratedAt,
   onRefresh,
   isRefreshing,
@@ -351,15 +353,12 @@ function CardModal({
   // Focus moves into the dialog on open and back to the tile on close; Tab
   // stays inside it -- except while the lightbox (its own trap) is open.
   const dialogRef = useRef(null)
+  const scrollRef = useRef(null)
   useDialogFocus(dialogRef, { open: Boolean(card), trap: Boolean(card) && !lightboxOpen })
   // Which scan the modal thumbnail is showing: start with the 500x700
   // "front" scan; if the CDN doesn't have one for this card, fall back to
   // the 2x thumbnail rather than a broken image.
   const [hdFailed, setHdFailed] = useState(false)
-  // Collapsed by default -- a full ability text can run to a dozen lines,
-  // which used to push the sticky footer (price/stock/outbound link) far
-  // enough down that reaching it meant scrolling past a wall of text first.
-  const [skillOpen, setSkillOpen] = useState(false)
   // undefined = not loaded yet; null = unavailable. Kept across cards: the
   // loader is memoized per session, so after the first open this resolves
   // straight away.
@@ -371,14 +370,15 @@ function CardModal({
   const [detailTry, setDetailTry] = useState(0)
   const setSlug = card?.setSlug
 
-  // Reset per card so a previous card's fallback/lightbox/skill state doesn't
-  // leak. Keyed on the id, not the object: a catalog refresh swaps in a
-  // fresh object for the same card, which shouldn't collapse what's open.
+  // Reset per card so a previous card's fallback/lightbox state doesn't
+  // leak, and start each card at the top. Keyed on the id, not the object:
+  // a catalog refresh swaps in a fresh object for the same card, which
+  // shouldn't collapse what's open.
   const cardId = card?.id
   useEffect(() => {
     setLightboxOpen(false)
     setHdFailed(false)
-    setSkillOpen(false)
+    scrollRef.current?.scrollTo({ top: 0 })
   }, [cardId])
 
   // History is fetched lazily, on the first modal open -- never on page
@@ -432,13 +432,15 @@ function CardModal({
     setDetailTry((n) => n + 1)
   }, [setSlug])
 
-  // Escape-to-close, and lock page scroll while the modal is open -- both
-  // only need to be active while a card is actually selected.
+  // Escape closes; ←/→ step to the previous/next card. Page scroll is
+  // locked while the modal is open -- all only while a card is selected.
   useEffect(() => {
     if (!card) return
 
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose()
+      else if (e.key === 'ArrowLeft' && onPrev && !isArrowTargetBusy(e)) onPrev()
+      else if (e.key === 'ArrowRight' && onNext && !isArrowTargetBusy(e)) onNext()
     }
     document.addEventListener('keydown', handleKeyDown)
 
@@ -449,7 +451,7 @@ function CardModal({
       document.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = previousOverflow
     }
-  }, [card, onClose])
+  }, [card, onClose, onPrev, onNext])
 
   if (!card) return null
 
@@ -463,7 +465,7 @@ function CardModal({
     currency && currency !== 'JPY' ? formatPrice(card.price, currency, rates) : card.priceDisplay
   const hdSrc = imageUrlHd(card.imageUrl)
   const bigSrc = (!hdFailed && hdSrc) || imageUrl2x(card.imageUrl) || card.imageUrl
-  const altText = card.nameEn || card.nameJp
+  const name = card.nameEn || card.nameJp
 
   return (
     <div
@@ -471,28 +473,51 @@ function CardModal({
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 dark:bg-night-950/75"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-4 dark:bg-night-950/75"
     >
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={card.nameEn || card.nameJp}
+        aria-labelledby="card-modal-title"
         tabIndex={-1}
-        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl outline-none dark:bg-night-800"
+        className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-surface shadow-xl outline-none"
       >
-        {/* Scrollable content -- everything EXCEPT price/stock/the outbound
-            link, which live in the sticky footer below instead. Card art
-            plus (once scrape-card-detail.js is enabled) skill text can run
-            taller than a phone's viewport, and on a real device that used
-            to push the outbound link below the modal's own clipped edge --
-            tapping where it visually should be actually hit the backdrop
-            behind it (verified: elementFromPoint at the link's un-scrolled
-            position returned the backdrop div, not the link), which just
-            closed the modal instead of opening anything. Keeping this
-            footer outside the scroll container means the link is always
-            reachable regardless of how tall the content above it gets. */}
-        <div className="flex min-h-0 flex-col gap-5 overflow-y-auto p-5 sm:grid sm:grid-cols-[200px_1fr] sm:p-6">
+        {/* Top bar: previous/next and close, outside the scrolling content
+            so they never scroll out of reach (the same reason price, stock
+            and the outbound link live in the pinned footer: on a phone,
+            content scrolled past the modal's clipped edge leaves taps
+            landing on the backdrop, which closes the modal instead). */}
+        <div className="flex items-center gap-1 border-b border-line px-2 py-1.5">
+          {position ? (
+            <>
+              {/* aria-disabled, not disabled: a button that disables itself
+                  while focused (stepping onto the last card) drops focus. */}
+              <IconButton
+                icon="chevronLeft"
+                label="Previous card"
+                onClick={() => onPrev?.()}
+                aria-disabled={!onPrev}
+                className="aria-disabled:cursor-default aria-disabled:opacity-30"
+              />
+              <span className="min-w-16 text-center text-xs tabular-nums text-fg-muted">
+                {(position.index + 1).toLocaleString()} of {position.total.toLocaleString()}
+              </span>
+              <IconButton
+                icon="chevronRight"
+                label="Next card"
+                onClick={() => onNext?.()}
+                aria-disabled={!onNext}
+                className="aria-disabled:cursor-default aria-disabled:opacity-30"
+              />
+            </>
+          ) : (
+            <span className="px-2 font-mono text-xs text-fg-subtle">{card.setCode}</span>
+          )}
+          <IconButton icon="close" label="Close" onClick={onClose} className="ml-auto" />
+        </div>
+
+        <div ref={scrollRef} className="flex min-h-0 flex-col gap-5 overflow-y-auto p-5 sm:grid sm:grid-cols-[200px_1fr] sm:p-6">
           {/* shrink-0: in the phone (flex-col) layout, tall content below --
               e.g. the price history -- would otherwise squash the art into a
               thin strip. No-op in the sm: grid layout. */}
@@ -501,83 +526,54 @@ function CardModal({
             onClick={() => setLightboxOpen(true)}
             aria-label="View full-size card image"
             title="View full size"
-            className="group relative aspect-[100/140] w-36 max-h-[38vh] shrink-0 cursor-zoom-in self-center overflow-hidden rounded-md bg-slate-100 sm:w-full dark:bg-night-700 sm:max-h-none sm:self-auto"
+            className="group relative aspect-[100/140] w-36 max-h-[38vh] shrink-0 cursor-zoom-in self-center overflow-hidden rounded-lg bg-surface-2 sm:w-full sm:max-h-none sm:self-auto"
           >
             <img
               src={bigSrc}
               onError={() => {
                 if (!hdFailed) setHdFailed(true)
               }}
-              alt={altText}
-              className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+              alt={name}
+              className="h-full w-full object-cover transition-transform duration-200 motion-safe:group-hover:scale-[1.02]"
             />
             <div className="absolute left-1.5 top-1.5">
               <RarityBadge rarity={card.rarity} />
             </div>
-            <span className="absolute bottom-1.5 right-1.5 rounded bg-night-950/70 px-1.5 py-0.5 text-[10px] font-medium text-gold-500 opacity-80 group-hover:opacity-100">
-              Tap to enlarge
+            <span className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-night-950/70 text-white opacity-80 transition group-hover:opacity-100">
+              <Icon name="expand" className="h-4 w-4" />
             </span>
           </button>
 
-          <div className="flex flex-col gap-3">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <h2 className="text-lg font-bold leading-snug text-slate-900 dark:text-gold-500">
-                  {card.nameEn || card.nameJp}
-                </h2>
-                {card.nameEn && card.nameJp && (
-                  <p lang="ja" className="mt-0.5 text-sm text-slate-500 dark:text-gold-500/70">
-                    {card.nameJp}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:text-gold-500/70 dark:hover:bg-night-700 dark:hover:text-gold-500"
-              >
-                <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                  <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs text-slate-500 dark:text-gold-500/70">
-              <span>{card.setCode}</span>
-              <StatPill value={full.kind} />
-              <StatPill value={full.clan} />
-              <StatPill value={full.grade != null ? `Grade ${full.grade}` : null} />
-              <StatPill value={full.power != null ? `Power ${full.power}` : null} />
-              <StatPill value={full.shield != null ? `Shield ${full.shield}` : null} />
-            </div>
-
+          <div className="flex min-w-0 flex-col gap-4">
             <div>
-              <button
-                type="button"
-                onClick={() => setSkillOpen((open) => !open)}
-                aria-expanded={skillOpen}
-                className="flex w-full items-center gap-1 py-1 text-xs font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600 dark:text-gold-500/60 dark:hover:text-gold-500"
-              >
-                <svg
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  className={`h-3.5 w-3.5 shrink-0 transition-transform ${skillOpen ? 'rotate-90' : ''}`}
-                >
-                  <path d="M7.05 4.05a1 1 0 011.414 0l4.243 4.243a1 1 0 010 1.414L8.464 13.95a1 1 0 11-1.414-1.414L10.586 9 7.05 5.464a1 1 0 010-1.414z" />
-                </svg>
-                Skill {skillOpen ? '' : '(tap to show)'}
-              </button>
-              {skillOpen && <SkillText card={full} status={detailStatus} onRetry={retryDetails} />}
+              <h2 id="card-modal-title" className="text-xl font-bold leading-snug text-fg">
+                {name}
+              </h2>
+              {card.nameEn && card.nameJp && (
+                <p lang="ja" className="mt-0.5 text-sm text-fg-muted">
+                  {card.nameJp}
+                </p>
+              )}
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="font-mono text-xs text-fg-muted">{card.setCode}</span>
+                <StatPill value={full.kind} />
+                <StatPill value={full.clan} />
+                <StatPill value={full.grade != null ? `Grade ${full.grade}` : null} />
+                <StatPill value={full.power != null ? `Power ${full.power}` : null} />
+                <StatPill value={full.shield != null ? `Shield ${full.shield}` : null} />
+              </div>
             </div>
+
+            <section className="flex flex-col gap-1.5">
+              <h3 className={SECTION_HEADING}>Skill</h3>
+              <SkillText card={full} status={detailStatus} onRetry={retryDetails} />
+            </section>
 
             {full.flavorEn ? (
-              <p className="whitespace-pre-line text-xs italic leading-relaxed text-slate-500 dark:text-gold-500/60">
-                {full.flavorEn}
-              </p>
+              <p className="whitespace-pre-line text-sm italic leading-relaxed text-fg-muted">{full.flavorEn}</p>
             ) : (
               full.flavorJp && (
-                <p lang="ja" className="text-xs italic leading-relaxed text-slate-500 dark:text-gold-500/60">
+                <p lang="ja" className="text-sm italic leading-relaxed text-fg-muted">
                   {full.flavorJp}
                 </p>
               )
@@ -587,13 +583,13 @@ function CardModal({
                 Held back while the shard loads: wikiTitle (the exact page,
                 when it differs from the name) only arrives with it. */}
             {card.translationSource === 'fandom' && detailStatus !== 'loading' && (
-              <p className="text-[11px] text-slate-400 dark:text-gold-500/50">
+              <p className="text-xs text-fg-subtle">
                 English name and text: fan translation from the{' '}
                 <a
                   href={wikiUrl(full.wikiTitle || card.nameEn)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline underline-offset-2 hover:text-slate-600 dark:hover:text-gold-500"
+                  className="underline underline-offset-2 hover:text-fg"
                 >
                   Cardfight!! Vanguard Wiki
                 </a>{' '}
@@ -614,18 +610,14 @@ function CardModal({
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 border-t border-slate-100 px-5 py-3 sm:px-6 dark:border-night-600">
+        <div className="flex flex-col gap-2 border-t border-line px-5 py-3 sm:px-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="flex items-center gap-1.5">
-                <span className="text-xl font-bold text-brand-700 dark:text-brand-400">{displayPrice}</span>
+                <span className="text-2xl font-bold tabular-nums text-accent">{displayPrice}</span>
                 {card.chg7d && <DeltaChip from={card.chg7d.from} to={card.price} period="7 days" suffix="7d" />}
               </span>
-              <span
-                className={`text-xs font-semibold ${inStock ? 'text-green-600' : 'text-red-500'}`}
-              >
-                {stockLabel}
-              </span>
+              <span className={`text-sm font-medium ${inStock ? 'text-positive' : 'text-negative'}`}>{stockLabel}</span>
             </div>
 
             <CalcControl card={card} qty={calcQty} onChange={onCalcChange} />
@@ -636,15 +628,16 @@ function CardModal({
               href={card.detailUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="-my-2 inline-block self-start py-2 text-xs font-medium text-brand-600 hover:underline dark:text-brand-400"
+              className="-my-2 inline-flex items-center gap-1 self-start py-2 text-xs font-medium text-accent hover:underline"
             >
-              View original listing on Yuyu-tei ↗
+              View original listing on Yuyu-tei
+              <Icon name="external" className="h-3.5 w-3.5" />
             </a>
           )}
         </div>
       </div>
 
-      {lightboxOpen && <Lightbox src={bigSrc} alt={altText} onClose={closeLightbox} />}
+      {lightboxOpen && <Lightbox src={bigSrc} alt={name} onClose={closeLightbox} />}
     </div>
   )
 }

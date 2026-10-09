@@ -179,7 +179,7 @@ export async function dropLegacyCatalogCache() {
 }
 
 // Never cache (and never trust a cached copy of) a catalog with no cards —
-// a truncated upload would otherwise stick for a whole day.
+// a truncated upload would otherwise stick until the cache expires.
 // The slim catalog's format version (pipeline/catalog-split.js writes v: 1):
 // anything else -- the old full file, a future format this build can't read --
 // is invalid, so it's neither cached nor trusted.
@@ -200,7 +200,7 @@ function isValidCatalog(data) {
 }
 
 /**
- * The catalog, via the same-day cache (bypassed for reading with `force`).
+ * The catalog, via the hourly cache (bypassed for reading with `force`).
  * Resolves to `{ data, fromCache }`; rejects only on a network/HTTP failure
  * (see getCachedJson).
  */

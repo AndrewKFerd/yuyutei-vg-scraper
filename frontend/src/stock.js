@@ -4,6 +4,6 @@
 // items (commons, trial-deck fillers) with no specific count shown.
 export function stockInfo(stock) {
   if (stock === null) return { inStock: true, label: 'In stock' }
-  if (stock > 0) return { inStock: true, label: `Stock: ${stock}` }
+  if (stock > 0) return { inStock: true, label: `${stock} in stock` }
   return { inStock: false, label: 'Out of stock' }
 }

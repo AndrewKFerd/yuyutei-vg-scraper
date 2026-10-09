@@ -62,7 +62,7 @@ export function reloadSetDetailsIfCached(setSlug) {
   return startLoad(setSlug, { force: true })
 }
 
-/** Drops the in-memory and cached shards (used by "Refresh now"); they reload lazily. */
+/** Drops the in-memory and cached shards (used by the header's refresh button); they reload lazily. */
 export async function clearDetailsCache() {
   loads.clear()
   fetchedFresh.clear()
