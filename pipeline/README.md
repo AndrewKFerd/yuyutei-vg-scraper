@@ -20,7 +20,7 @@ npm test                 # node --test
 
 | Script | What it does | Output (in `data/`) |
 |---|---|---|
-| `scrape-catalog.js` | yuyu-tei's global VG search, every set's listings (~28k cards, 300+ sets) | `catalog-raw.json` |
+| `scrape-catalog.js` | yuyu-tei's global VG search, every set's listings (~28k cards, 300+ sets), plus the shop's set list (names, newest first) off page 1 | `catalog-raw.json` |
 | `scrape-set.js <slug>` | refresh one set inside `catalog-raw.json` | |
 | `scrape-cf-vanguard.js` | official English database (names, stats, skill text) for JP set codes with a verified English release | `cf-vanguard-raw.json` |
 | `scrape-card-detail.js` | per-card yuyu-tei detail page: Japanese skill text. Slow (~28k requests), resumable, always merges into the existing file | `card-details-raw.json` (committed) |
@@ -109,7 +109,9 @@ there are local backups in `price-history.prev.json` and `history-backups/`
   chg7d, nation; ~6 MB raw, ~0.6 MB brotli). `imageUrl`, `detailUrl` and
   `priceDisplay` are dropped when they follow from the id/price
   (`frontend/src/catalogFormat.js` rebuilds them). It also carries the nation
-  list. `nation.js` maps D-era nations and classic clans to nations.
+  list (`nation.js` maps D-era nations and classic clans to nations) and the
+  set filter's list, `sets`: `{ slug, code, name }` in the shop's order, with
+  the official code ("D-BT08") read off the cards and yuyu-tei's set name.
 - **`details/<set>.json`**: one file per set (~300) with each card's skill text,
   flavor, kind/clan/grade/power/shield and wiki title, loaded when a card opens.
 - **`cards.json`**: the full ~30 MB file. It's still built because

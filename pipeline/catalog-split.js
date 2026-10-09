@@ -79,14 +79,73 @@ function slimCard(card) {
   return slim;
 }
 
+/**
+ * The set filter's list: [{ slug, code, name }] for every set some card is
+ * in, in yuyu-tei's order (`rawSets`, scrape-catalog.js's [{ slug, label }];
+ * sets it doesn't list follow, by slug).
+ *
+ * `code` is the official product code players know ("D-BT08"), read off the
+ * set's cards' own codes ("D-BT08/SNR01") -- the most common prefix, since a
+ * set can hold a few reprints from elsewhere. `name` is the shop's name with
+ * its "[DBT08] " tag dropped ("女神再臨"), or its whole label when it has no
+ * tag ("PR/001〜PR/100"); null without a list.
+ */
+// The shop's untagged catch-all sets, which have no product code to show.
+const UNTAGGED_SET_NAMES = {
+  '付属デッキ': 'Deck inserts',
+  'その他': 'Other promos',
+  'PRカード': 'Promo cards',
+  'ギフト': 'Gifts',
+  'ギフトマーカー': 'Gift markers',
+};
+
+function buildSetList(cards, rawSets) {
+  const prefixCounts = new Map();
+  for (const card of cards) {
+    if (!card.setSlug) continue;
+    const prefix = String(card.setCode || '').split('/')[0].trim();
+    if (!prefixCounts.has(card.setSlug)) prefixCounts.set(card.setSlug, new Map());
+    if (prefix) {
+      const counts = prefixCounts.get(card.setSlug);
+      counts.set(prefix, (counts.get(prefix) || 0) + 1);
+    }
+  }
+  const codeOf = (slug) => {
+    let best = null;
+    let bestCount = 0;
+    for (const [prefix, count] of prefixCounts.get(slug) || []) {
+      if (count > bestCount) [best, bestCount] = [prefix, count];
+    }
+    return best;
+  };
+
+  const list = [];
+  const listed = new Set();
+  for (const { slug, label } of Array.isArray(rawSets) ? rawSets : []) {
+    if (!prefixCounts.has(slug) || listed.has(slug)) continue;
+    listed.add(slug);
+    const tagged = /^\[([^\]]+)\]\s*(.*)$/.exec(label || '');
+    list.push({
+      slug,
+      code: tagged ? codeOf(slug) || tagged[1] : null,
+      name: (tagged ? tagged[2] : UNTAGGED_SET_NAMES[label] || label || '').replace(/〜/g, '–') || null,
+    });
+  }
+  for (const slug of [...prefixCounts.keys()].filter((s) => !listed.has(s)).sort()) {
+    list.push({ slug, code: codeOf(slug), name: null });
+  }
+  return list;
+}
+
 /** The slim catalog payload for a full card list. */
-function buildSlimCatalog(cards, { generatedAt }) {
+function buildSlimCatalog(cards, { generatedAt, sets } = {}) {
   return {
     v: CATALOG_FORMAT_VERSION,
     generatedAt,
     count: cards.length,
     // code -> label/group for the cards' nation codes, in display order.
     nations: NATIONS,
+    sets: buildSetList(cards, sets),
     cards: cards.map(slimCard),
   };
 }
@@ -175,6 +234,7 @@ module.exports = {
   derivedPriceDisplay,
   slimCard,
   buildSlimCatalog,
+  buildSetList,
   detailOf,
   buildDetailShards,
   writeDetailShards,

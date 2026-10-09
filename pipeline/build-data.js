@@ -296,7 +296,7 @@ function main() {
   // untouched, and the next run simply redoes the split.
   const shards = buildDetailShards(cards);
   const shardStats = writeDetailShards(DETAILS_DIR, shards);
-  writeFileAtomic(CATALOG_OUT_PATH, JSON.stringify(buildSlimCatalog(cards, { generatedAt: payload.generatedAt })));
+  writeFileAtomic(CATALOG_OUT_PATH, JSON.stringify(buildSlimCatalog(cards, { generatedAt: payload.generatedAt, sets: raw.sets })));
   writeFileAtomic(OUT_PATH, JSON.stringify(payload));
 
   console.log(`Wrote ${cards.length} cards to ${OUT_PATH}`);

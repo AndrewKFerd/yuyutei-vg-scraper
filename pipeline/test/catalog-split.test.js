@@ -10,6 +10,7 @@ const { pathToFileURL } = require('node:url');
 const {
   slimCard,
   buildSlimCatalog,
+  buildSetList,
   buildDetailShards,
   writeDetailShards,
   detailOf,
@@ -104,6 +105,42 @@ describe('buildSlimCatalog', () => {
     assert.equal(cat.generatedAt, 'T');
     assert.equal(cat.count, 2);
     assert.equal(cat.cards.length, 2);
+  });
+});
+
+describe('buildSetList', () => {
+  const cards = [
+    card({ id: 'dbt08/1' }),
+    card({ id: 'dbt08/2', setCode: 'D-BT08/002' }),
+    card({ id: 'dbt08/3', setCode: 'D-PR/100' }), // a reprint from elsewhere
+    card({ id: 'promo-100/4', setCode: 'PR/0004' }),
+    card({ id: 'zzz/5', setCode: 'X-TD01/005' }),
+  ];
+
+  it('follows the shop order, takes the majority code prefix and strips the [TAG] from names', () => {
+    const list = buildSetList(cards, [
+      { slug: 'promo-100', label: 'PR/001〜PR/100' },
+      { slug: 'gone', label: '[GONE] not in the catalog' },
+      { slug: 'dbt08', label: '[DBT08] 女神再臨' },
+    ]);
+    assert.deepEqual(list, [
+      { slug: 'promo-100', code: null, name: 'PR/001–PR/100' },
+      { slug: 'dbt08', code: 'D-BT08', name: '女神再臨' },
+      { slug: 'zzz', code: 'X-TD01', name: null },
+    ]);
+  });
+
+  it('falls back to codes only, by slug, without a scraped list', () => {
+    assert.deepEqual(buildSetList(cards, undefined).map((s) => [s.slug, s.code, s.name]), [
+      ['dbt08', 'D-BT08', null],
+      ['promo-100', 'PR', null],
+      ['zzz', 'X-TD01', null],
+    ]);
+  });
+
+  it('is part of the slim catalog', () => {
+    const cat = buildSlimCatalog(cards, { generatedAt: 'T', sets: [{ slug: 'dbt08', label: '[DBT08] 女神再臨' }] });
+    assert.equal(cat.sets[0].code, 'D-BT08');
   });
 });
 

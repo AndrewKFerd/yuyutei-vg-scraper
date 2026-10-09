@@ -156,6 +156,28 @@ function parseCardsFromHtml(html) {
   return cards;
 }
 
+/**
+ * The set list from a page's filter sidebar, in yuyu-tei's own order (newest
+ * first, then the older series and promos): [{ slug, label }], where label is
+ * the shop's text, e.g. "[DBT08] 女神再臨" or "PR/001〜PR/100". Every search
+ * page carries the full list, so the crawl reads it off page 1 for free.
+ * Empty when the markup isn't there; the catalog then falls back to codes.
+ */
+function parseSetListFromHtml(html) {
+  const $ = cheerio.load(html);
+  const sets = [];
+  const seen = new Set();
+  $('input.versPhone[name="vers[]"]').each((_, el) => {
+    const slug = ($(el).attr('value') || '').trim();
+    if (!slug || seen.has(slug)) return;
+    const label = $(`label[for="${$(el).attr('id')}"]`).first().text().trim().replace(/\s+/g, ' ');
+    if (!label) return;
+    seen.add(slug);
+    sets.push({ slug, label });
+  });
+  return sets;
+}
+
 async function scrapeCatalog() {
   const seen = new Set(); // `${setSlug}::${id}`
   const cards = [];
@@ -182,10 +204,20 @@ async function scrapeCatalog() {
   await sleep(DELAY_MS);
 
   let referer = SITE_ROOT;
+  let sets = [];
 
   for (let page = 1; page <= MAX_PAGES; page++) {
     const html = await fetchPageWithRetry(page, jar, referer);
     referer = buildUrl(page);
+
+    // Set names are a nicety: a markup change must never fail the crawl.
+    if (html !== null && sets.length === 0) {
+      try {
+        sets = parseSetListFromHtml(html);
+      } catch (err) {
+        console.warn(`[warn] Couldn't read the set list (${err.message}); the site will show set codes only.`);
+      }
+    }
 
     if (html === null) {
       // Failed after retries; move on to the next page rather than aborting.
@@ -234,17 +266,20 @@ async function scrapeCatalog() {
     console.log(`Skipped ${duplicatesSkipped} duplicate card(s) (same setSlug+id seen twice).`);
   }
 
-  return { cards, pagesScraped };
+  if (sets.length === 0) console.warn('[warn] No set list found on any page; the site will show set codes only.');
+
+  return { cards, pagesScraped, sets };
 }
 
 async function main() {
   const startedAt = Date.now();
-  const { cards, pagesScraped } = await scrapeCatalog();
+  const { cards, pagesScraped, sets } = await scrapeCatalog();
 
   const output = {
     scrapedAt: new Date().toISOString(),
     pagesScraped,
     count: cards.length,
+    sets,
     cards,
   };
 
@@ -266,4 +301,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseCardsFromHtml, parsePrice, parseStock, extractIdFromUrl, extractSetSlugFromUrl };
+module.exports = { parseCardsFromHtml, parseSetListFromHtml, parsePrice, parseStock, extractIdFromUrl, extractSetSlugFromUrl };
