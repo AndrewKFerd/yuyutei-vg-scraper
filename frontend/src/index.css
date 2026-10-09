@@ -7,7 +7,8 @@
 
 /* Brand palette: "brand" (blue, #5195E1 at 500) is the primary interactive
    color; "gold" (cream/gold, #eecf99 at 500) is the accent used for skill
-   text and top rarities. Both ramps share the base hex's hue/saturation.
+   text, the logo and top rarities. Both ramps share the base hex's
+   hue/saturation.
 
    "night" is the dark-mode surface ramp: near-black with the brand blue's
    hue (212) baked in, so dark surfaces read as deep navy rather than
@@ -43,6 +44,98 @@
   --color-gold-900: hsl(38 48% 30%);
 }
 
+/* Semantic tokens -- what components use, so both themes stay in step and
+   every text/background pair is checked once, here, rather than per file.
+   All text tokens clear WCAG AA (4.5:1) on `bg`, `surface` and, except
+   `fg-subtle` in light mode, `surface-2`:
+
+     bg         page background
+     surface    cards, inputs, dialogs, popovers
+     surface-2  quiet fills: image placeholders, pills, hovered rows
+     line       dividers and card borders; line-strong: control borders
+     fg         primary text            fg-muted   secondary text
+     fg-subtle  footnotes, captions, axis labels (on bg/surface only)
+     accent     links, prices, selected states (text)
+     accent-solid / on-accent   filled primary buttons and their text
+     positive / negative / warning   price up / down, stock warnings
+     highlight / highlight-line      the gold skill-text and notice boxes
+
+   Dark mode keeps gold as an accent (skill text, logo, top rarities) and
+   uses a warm off-white for text, so hierarchy comes from three distinct
+   tones instead of one gold at five opacities.
+
+   Shape: controls (inputs, selects, buttons, segmented groups) are
+   rounded-full; cards, popovers and tiles rounded-lg; dialogs and sheets
+   rounded-xl; badges and chips rounded. */
+:root {
+  --bg: var(--color-slate-50);
+  --surface: #fff;
+  --surface-2: var(--color-slate-100);
+  --line: var(--color-slate-200);
+  --line-strong: var(--color-slate-300);
+  --fg: var(--color-slate-900);
+  --fg-muted: var(--color-slate-600);
+  --fg-subtle: var(--color-slate-500);
+  --accent: var(--color-brand-700);
+  --accent-solid: var(--color-brand-700);
+  --accent-solid-hover: var(--color-brand-800);
+  --on-accent: #fff;
+  --accent-soft: var(--color-brand-50);
+  --ring: var(--color-brand-200);
+  --positive: var(--color-green-700);
+  --negative: var(--color-red-700);
+  --warning: var(--color-amber-700);
+  --highlight: var(--color-gold-50);
+  --highlight-line: var(--color-gold-300);
+  --logo: var(--color-gold-500);
+}
+
+.dark {
+  --bg: var(--color-night-900);
+  --surface: var(--color-night-800);
+  --surface-2: var(--color-night-700);
+  --line: var(--color-night-600);
+  --line-strong: var(--color-night-600);
+  --fg: hsl(40 30% 91%);
+  --fg-muted: hsl(212 18% 74%);
+  --fg-subtle: hsl(212 13% 62%);
+  --accent: var(--color-brand-400);
+  --accent-solid: var(--color-brand-500);
+  --accent-solid-hover: var(--color-brand-400);
+  --on-accent: var(--color-night-950);
+  --accent-soft: var(--color-night-700);
+  --ring: hsl(212 73% 67% / 0.3);
+  --positive: var(--color-green-400);
+  --negative: var(--color-red-400);
+  --warning: var(--color-amber-400);
+  --highlight: var(--color-night-700);
+  --highlight-line: hsl(38 55% 52% / 0.5);
+  --logo: var(--color-gold-500);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-solid: var(--accent-solid);
+  --color-accent-solid-hover: var(--accent-solid-hover);
+  --color-on-accent: var(--on-accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-ring: var(--ring);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-warning: var(--warning);
+  --color-highlight: var(--highlight);
+  --color-highlight-line: var(--highlight-line);
+  --color-logo: var(--logo);
+}
+
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -52,7 +145,8 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: var(--color-slate-50);
+  background: var(--bg);
+  color: var(--fg);
 }
 
 /* Paint the root too so overscroll/bounce areas and native form controls
@@ -60,6 +154,23 @@ body {
 html.dark {
   color-scheme: dark;
 }
-html.dark body {
-  background: var(--color-night-900);
+
+/* Visible keyboard focus everywhere, in one place. Mouse clicks don't show
+   it (:focus-visible), and text fields keep their own ring. */
+:where(button, a, summary, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Motion is decoration here, never information: drop it for anyone who
+   asked their OS for less. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
