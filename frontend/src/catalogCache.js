@@ -8,8 +8,9 @@
 // Behavior: the first visit fetches from the network and caches the raw
 // response. Any visit within that URL's TTL reuses the cached copy with no
 // network request at all. Once the TTL has passed, the next visit fetches
-// fresh again and re-caches. The catalog uses a 1-day TTL (the heavy
-// download, and prices only need to be roughly daily-fresh for browsing);
+// fresh again and re-caches. The catalog uses a 1-hour TTL (the heavy
+// download, matching the edge cache in api/catalog.js, so a new set or a
+// price change shows up within about an hour);
 // history/movers use 30 minutes, since they're small and the pipeline
 // rewrites them every run.
 
@@ -19,7 +20,7 @@ const CACHE_NAME = 'yuyutei-catalog-v1'
 // and those endpoints are the only thing allowed to read it (they hold the
 // S3 credentials server-side, never sent to the browser).
 export const CATALOG_URL = '/api/catalog'
-const CATALOG_TTL_MS = 24 * 60 * 60 * 1000 // 1 day
+const CATALOG_TTL_MS = 60 * 60 * 1000 // 1 hour
 // The catalog used to be the full ~30 MB /api/cards file, cached under this
 // URL with its own timestamp key. The slim catalog has a new URL (so a stale
 // full copy can never be read as a slim one) and the default timestamp key;

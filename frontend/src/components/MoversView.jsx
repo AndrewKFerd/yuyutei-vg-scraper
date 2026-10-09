@@ -49,7 +49,7 @@ function inNation(card, nation) {
 }
 
 // Tiles show the movers-side price/stock, not the catalog's: the catalog is
-// cached for up to a day while movers/history refresh every 30 minutes, so
+// cached for up to an hour while movers/history refresh every 30 minutes, so
 // a returning visitor's catalog can say "¥500, 1 in stock" for a card this
 // view lists as "¥500 -> ¥1,480, just sold out". The same object is what a
 // tap passes to the card modal. Returns the catalog object itself when

@@ -133,7 +133,7 @@ export function isoToMinute(iso) {
 /**
  * The series' latest entry when it was recorded after the catalog snapshot
  * (`catalogMinute`) and disagrees with the card's price or stock, else null.
- * The catalog is cached for up to a day while history refreshes every 30
+ * The catalog is cached for up to an hour while history refreshes every 30
  * minutes, so a returning visitor's catalog can predate what history
  * already knows.
  */
