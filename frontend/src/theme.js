@@ -1,8 +1,9 @@
 // Light/dark theme, driven by a `.dark` class on <html> (see the
 // @custom-variant in index.css). Persisted per browser; falls back to the
-// OS preference when the user hasn't chosen explicitly. index.html runs an
-// equivalent inline check before React loads so the first paint is already
-// the right theme — keep the two in sync if you change the key or logic.
+// OS preference when the user hasn't chosen explicitly. public/theme-init.js
+// (loaded from index.html's <head>) runs an equivalent check before React
+// loads, so the first paint is already the right theme — keep the two in
+// sync if you change the key or logic.
 
 export const THEME_KEY = 'yuyutei:theme'
 

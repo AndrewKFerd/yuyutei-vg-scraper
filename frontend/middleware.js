@@ -18,6 +18,11 @@
 
 const API_PREFIX = '/api/'
 
+// The <style> below is allowed by its hash in vercel.json's
+// Content-Security-Policy (style-src 'sha256-…'). Change the CSS and that
+// hash must change too, or a CSP-applying browser shows the page unstyled.
+// To recompute: sha256 of the text between <style> and </style>, base64.
+
 const BLOCKED_COUNTRIES = new Set(['JP'])
 
 const BLOCKED_PAGE = `<!doctype html>

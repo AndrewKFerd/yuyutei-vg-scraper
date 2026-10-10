@@ -23,19 +23,9 @@
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
-    <script>
-      // Apply the saved/OS theme before first paint so there's no flash of
-      // the wrong theme. Mirrors src/theme.js — keep them in sync.
-      (function () {
-        try {
-          var t = localStorage.getItem('yuyutei:theme');
-          var dark =
-            t === 'dark' ||
-            (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-          if (dark) document.documentElement.classList.add('dark');
-        } catch (e) {}
-      })();
-    </script>
+    <!-- Sets the theme class before first paint (see the file). A file, not
+         inline, so the CSP in vercel.json can stay script-src 'self'. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

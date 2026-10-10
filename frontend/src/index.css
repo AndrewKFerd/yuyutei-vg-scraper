@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* Dark mode is toggled by a `.dark` class on <html> (see theme.js and the
-   inline bootstrap script in index.html), not by the OS media query alone,
+   bootstrap script public/theme-init.js), not by the OS media query alone,
    so the user can override their system preference. */
 @custom-variant dark (&:where(.dark, .dark *));
 
