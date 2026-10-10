@@ -2,8 +2,8 @@
 # (record-history.js), runs scrape-cf-vanguard.js, rebuilds
 # pipeline/data/cards.json, and uploads it -- plus the price history and
 # its served derivatives (history-public.json, movers.json) -- to the
-# private Supabase Storage bucket the frontend reads from (via api/cards.js,
-# api/history.js, api/movers.js). No git commit/push or Vercel redeploy
+# private Supabase Storage bucket the frontend reads from (via api/catalog.js,
+# api/details/[set].js, api/history.js, api/movers.js). No git commit/push or Vercel redeploy
 # needed for a data-only refresh; the site picks up the new data the next
 # time a visitor's client cache expires. This keeps prices/stock, price
 # history and official EN names/skill text current; it does NOT run

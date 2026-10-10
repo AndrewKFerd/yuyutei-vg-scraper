@@ -36,12 +36,10 @@ const { buildSlimCatalog, buildDetailShards, writeDetailShards } = require('./ca
 const CATALOG_PATH = path.join(__dirname, 'data', 'catalog-raw.json');
 const SKILLS_PATH = path.join(__dirname, 'data', 'card-details-raw.json');
 const HISTORY_PATH = path.join(__dirname, 'data', 'price-history.json');
-// The full per-card file. Still written (and uploaded, served as /api/cards)
-// for two reasons: this build's own gates compare against the previous one,
-// and the frontend currently deployed predates the split below -- the
-// pipeline uploads independently of Vercel deploys, so it must keep working
-// until the new frontend ships. Once it has, upload-cards.js can stop
-// uploading this (README: "Catalog split").
+// The full per-card file. Still written because this build's own gates
+// compare against the previous one. No longer served (the /api/cards route
+// is gone), so upload-cards.js can stop uploading it (README: "Catalog
+// split").
 const OUT_PATH = path.join(__dirname, 'data', 'cards.json');
 // What the new frontend loads (see catalog-split.js): a slim catalog for the
 // grid plus one detail shard per set, fetched when a card is opened.

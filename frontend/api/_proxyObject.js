@@ -1,7 +1,8 @@
 // Builds a Vercel Function handler that proxies one object from the private
 // Supabase bucket, so the browser never sees the S3 credentials. Cached at
 // the edge (s-maxage) so repeat visits across different users don't each
-// re-hit Supabase. Shared by api/cards.js, api/history.js and api/movers.js.
+// re-hit Supabase. Shared by api/catalog.js, api/details/[set].js,
+// api/history.js and api/movers.js.
 import { pipeline } from 'node:stream/promises'
 import { fetchObjectStream } from './_supabaseCards.js'
 

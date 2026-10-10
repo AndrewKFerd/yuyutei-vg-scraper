@@ -15,13 +15,13 @@
 // rewrites them every run.
 
 const CACHE_NAME = 'yuyutei-catalog-v1'
-// Proxied through our own /api/* functions (api/cards.js etc.) rather than
+// Proxied through our own /api/* functions (api/catalog.js etc.) rather than
 // static files -- the dataset lives in a private Supabase Storage bucket,
 // and those endpoints are the only thing allowed to read it (they hold the
 // S3 credentials server-side, never sent to the browser).
 export const CATALOG_URL = '/api/catalog'
 const CATALOG_TTL_MS = 60 * 60 * 1000 // 1 hour
-// The catalog used to be the full ~30 MB /api/cards file, cached under this
+// The catalog used to be the full ~30 MB /api/cards file (now removed), cached under this
 // URL with its own timestamp key. The slim catalog has a new URL (so a stale
 // full copy can never be read as a slim one) and the default timestamp key;
 // the old entry is dropped once, see dropLegacyCatalogCache.

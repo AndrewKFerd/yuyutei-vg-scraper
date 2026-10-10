@@ -115,9 +115,10 @@ there are local backups in `price-history.prev.json` and `history-backups/`
 - **`details/<set>.json`**: one file per set (~300) with each card's skill text,
   flavor, kind/clan/grade/power/shield and wiki title, loaded when a card opens.
 - **`cards.json`**: the full ~30 MB file. It's still built because
-  `build-data.js`'s official-name gate compares against it, and still uploaded
-  for the legacy `/api/cards` route. Both can go once old frontends have aged
-  out.
+  `build-data.js`'s official-name gate compares against it. It's still
+  uploaded too, but nothing serves it any more: the `/api/cards` route is
+  gone (the file was too big to edge-cache, so every request cost a full
+  Supabase download). The upload can be dropped from `upload-cards.js`.
 
 `upload-cards.js` uploads the history files, then the detail shards, then
 `catalog.json`, so the catalog never points at a missing shard. Each run lists

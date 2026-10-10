@@ -1,6 +1,6 @@
 // Vercel Routing Middleware -- runs before every request (page, assets and
-// /api/cards alike, and ahead of Vercel's edge cache), so a blocked
-// visitor never reaches the site or the Supabase-backed catalog.
+// /api/* alike, and ahead of Vercel's edge cache), so a blocked visitor
+// never reaches the site or the Supabase-backed catalog.
 //
 // Vercel geolocates the client IP and passes the ISO country code in
 // x-vercel-ip-country. The header is absent outside Vercel (e.g. local
@@ -8,6 +8,15 @@
 // country is let through rather than blocked.
 //
 // Best-effort only: a VPN/proxy exiting outside a blocked country bypasses it.
+//
+// It also refuses /api/* requests that carry a query string. The edge cache
+// is keyed on the full URL, so "?x=<random>" would miss it every time and
+// make each request a function run plus a multi-MB Supabase download. No
+// client sends one (the API takes everything from the path), so refusing
+// them here, before the cache and any function, costs legitimate visitors
+// nothing.
+
+const API_PREFIX = '/api/'
 
 const BLOCKED_COUNTRIES = new Set(['JP'])
 
@@ -35,7 +44,22 @@ const BLOCKED_PAGE = `<!doctype html>
 
 export default function middleware(request) {
   const country = request.headers.get('x-vercel-ip-country')
-  if (!country || !BLOCKED_COUNTRIES.has(country.toUpperCase())) return
+  if (!country || !BLOCKED_COUNTRIES.has(country.toUpperCase())) {
+    const url = new URL(request.url)
+    // `search` is '' for both "/api/x" and "/api/x?" (an empty query), and
+    // the cache treats those two alike, so only a real query is refused.
+    if (url.pathname.startsWith(API_PREFIX) && url.search !== '') {
+      return new Response(JSON.stringify({ error: 'Query parameters are not supported' }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      })
+    }
+    return
+  }
 
   return new Response(BLOCKED_PAGE, {
     status: 403,

@@ -11,10 +11,12 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 
 // The bucket also holds objects that must never be public -- above all
 // price-history.json, the private canonical history the pipeline keeps as
-// a backup. Only these keys are servable; anything else is refused before
+// a backup, and cards.json, the full ~30 MB build kept for the pipeline's
+// gates (too big to edge-cache, so serving it let anyone run up egress).
+// Only these keys are servable; anything else is refused before
 // any request reaches S3, so a future route (or a bug that lets a caller
 // influence the key) can't turn this into a read-anything proxy.
-const SERVABLE_KEYS = new Set(['cards.json', 'catalog.json', 'history-public.json', 'movers.json'])
+const SERVABLE_KEYS = new Set(['catalog.json', 'history-public.json', 'movers.json'])
 
 // Per-set detail shards (details/<setSlug>.json). Set slugs are lowercase
 // letters, digits and hyphens (dzbt14, vpromo-300). The pattern is strict

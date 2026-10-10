@@ -20,10 +20,10 @@
  *  - catalog.json         the slim grid catalog, served via /api/catalog
  *                         (required). Uploaded only after every shard it
  *                         relies on, so it never points at a missing one
- *  - cards.json           the full catalog, served via /api/cards (required).
- *                         Transition only: the frontend deployed before the
- *                         catalog split still loads it. Drop this entry once
- *                         the split frontend is live (README: "Catalog split")
+ *  - cards.json           the full catalog, no longer served (required).
+ *                         The split frontend is live and the /api/cards
+ *                         route is gone, so this entry can be dropped
+ *                         (README: "Catalog split")
  * The history files go first so the backup lands even if a later upload
  * fails. A missing history/movers file is skipped with a warning (e.g.
  * before the history has been seeded); any upload error exits 1.

@@ -4,9 +4,8 @@ Vite + React + Tailwind site. Card data lives in a private Supabase Storage buck
 
 | Route | Bucket object | What it is |
 |---|---|---|
-| `/api/catalog` | `catalog.json` | the slim catalog (~6 MB, ~0.6 MB compressed), loaded on page load and cached for a day |
+| `/api/catalog` | `catalog.json` | the slim catalog (~6 MB, ~0.6 MB compressed), loaded on page load and cached for an hour |
 | `/api/details/<set>` | `details/<set>.json` | one set's skill text, flavor and stats — fetched when a card of that set is opened (`api/details/[set].js`; slug must match `[a-z0-9-]+`, else 400) |
-| `/api/cards` | `cards.json` | the full catalog (~30 MB). Legacy: only the frontend deployed before the catalog split uses it; drop it once the split is live |
 | `/api/history` | `history-public.json` | per-listing price/stock change history — fetched lazily (first card popup or Market Movers visit) |
 | `/api/movers` | `movers.json` | precomputed 24h / 7d / 30d market movers — fetched when Market Movers opens |
 

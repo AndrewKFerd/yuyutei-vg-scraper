@@ -7,7 +7,6 @@ import react from '@vitejs/plugin-react'
 
 // Route -> [production handler module, bucket object / local file name].
 const API_ROUTES = {
-  '/api/cards': ['./api/cards.js', 'cards.json'],
   '/api/catalog': ['./api/catalog.js', 'catalog.json'],
   '/api/history': ['./api/history.js', 'history-public.json'],
   '/api/movers': ['./api/movers.js', 'movers.json'],
@@ -73,8 +72,8 @@ async function serveLocalFile(req, res, filePath) {
   }
 }
 
-// Serves /api/cards, /api/catalog, /api/details/<slug>, /api/history and
-// /api/movers during `vite dev` by calling the exact same handlers api/*.js export for production, so local
+// Serves /api/catalog, /api/details/<slug>, /api/history and /api/movers
+// during `vite dev` by calling the exact same handlers api/*.js export for production, so local
 // dev exercises the real Supabase-backed path -- unless LOCAL_DATA_DIR is
 // set, in which case they're served from files in that directory instead.
 function apiDevMiddleware(env) {
