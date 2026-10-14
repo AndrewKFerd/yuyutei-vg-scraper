@@ -49,6 +49,12 @@ const PATHS = {
     </>
   ),
   moon: <path d="M16 12.6A6.5 6.5 0 017.4 4a6.5 6.5 0 108.6 8.6z" />,
+  table: (
+    <>
+      <rect x="3.25" y="4" width="13.5" height="12" rx="1.5" />
+      <path d="M3.25 8h13.5M3.25 12h13.5M8 8v8" />
+    </>
+  ),
   info: (
     <>
       <circle cx="10" cy="10" r="6.75" />

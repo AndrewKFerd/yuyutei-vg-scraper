@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import RarityBadge from './RarityBadge'
 import QtyStepper from './QtyStepper'
+import SaveListForm from './SaveListForm'
+import { Button } from './controls'
 import { formatPrice } from '../currency'
 import { formatListAsText } from '../useCalculator'
+import { defaultListName, saveResultText } from '../useSavedLists'
 import { focusSoon, useDialogFocus } from '../useDialogFocus'
 
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`
@@ -173,12 +176,17 @@ function CalcRow({ line, currency, rates, calc, onOpenCard, onRemove }) {
  * The full list as a bottom sheet (phones) / floating card (desktop).
  * `suspended` while a card modal is open on top of it: both listen for
  * Escape on the document, so without it one press would close both, and
- * both would trap Tab.
+ * both would trap Tab. `saved` is useSavedLists(), for "Save list";
+ * `onOpenSavedLists(listId?)` closes the panel onto the Saved lists view.
  */
-export function CalculatorPanel({ calc, currency, rates, onClose, onOpenCard, suspended, returnFocusRef }) {
+export function CalculatorPanel({ calc, saved, currency, rates, onClose, onOpenCard, onOpenSavedLists, suspended, returnFocusRef }) {
   const { lines, totals, undoInfo } = calc
   const sheetRef = useRef(null)
+  const saveButtonRef = useRef(null)
   const [copyState, setCopyState] = useState(null) // null | 'copied' | 'failed'
+  // null, 'naming' while the name field is open, then { id, text, warn } once
+  // saved (warn: it only lives in this tab, storage refused it).
+  const [saveState, setSaveState] = useState(null)
   const copyTimer = useRef(null)
   const total = totalText(totals, currency, rates)
   useDialogFocus(sheetRef, { open: true, trap: !suspended })
@@ -242,6 +250,19 @@ export function CalculatorPanel({ calc, currency, rates, onClose, onOpenCard, su
     focusSoon(() => sheetRef.current.querySelector('[data-remove]') || sheetRef.current)
   }
 
+  const closeSaveForm = () => {
+    setSaveState(null)
+    focusSoon(() => saveButtonRef.current)
+  }
+  const saveList = (name) => {
+    const result = saved.save(name, lines)
+    const text = saveResultText(result)
+    if (!result.id) return text
+    setSaveState({ id: result.id, text, warn: Boolean(result.error) })
+    focusSoon(() => saveButtonRef.current)
+    return null
+  }
+
   const showBuyable = totals.issues > 0 && totals.buyableJpy !== totals.totalJpy
 
   return (
@@ -268,16 +289,21 @@ export function CalculatorPanel({ calc, currency, rates, onClose, onOpenCard, su
               ({plural(totals.cards, 'card', 'cards')})
             </span>
           </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-muted transition hover:bg-surface-2 hover:text-fg"
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-              <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" />
-            </svg>
-          </button>
+          <span className="flex shrink-0 items-center gap-1">
+            <Button variant="link" size="inline" onClick={() => onOpenSavedLists()}>
+              Saved lists
+            </Button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-muted transition hover:bg-surface-2 hover:text-fg"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" />
+              </svg>
+            </button>
+          </span>
         </div>
 
         {lines.length === 0 ? (
@@ -334,22 +360,57 @@ export function CalculatorPanel({ calc, currency, rates, onClose, onOpenCard, su
             <p className="text-xs text-fg-subtle">
               Prices from yuyu-tei, shipping not included; conversions approximate.
             </p>
-            <div className="flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={copyList}
-                className="rounded-full bg-accent-solid px-4 py-2 text-sm font-semibold text-on-accent shadow-sm transition hover:bg-accent-solid-hover"
-              >
-                {copyState === 'copied' ? 'Copied!' : copyState === 'failed' ? 'Copy failed' : 'Copy list'}
-              </button>
-              <button
-                type="button"
-                onClick={clearAll}
-                className="text-sm font-medium text-negative underline-offset-2 hover:underline"
-              >
-                Clear all
-              </button>
-            </div>
+            {saveState === 'naming' ? (
+              <SaveListForm
+                label="Save this list as"
+                submitLabel="Save"
+                defaultName={defaultListName(saved.lists)}
+                onSubmit={saveList}
+                onCancel={closeSaveForm}
+              />
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={copyList}
+                    className="rounded-full bg-accent-solid px-4 py-2 text-sm font-semibold text-on-accent shadow-sm transition hover:bg-accent-solid-hover"
+                  >
+                    {copyState === 'copied' ? 'Copied!' : copyState === 'failed' ? 'Copy failed' : 'Copy list'}
+                  </button>
+                  <button
+                    ref={saveButtonRef}
+                    type="button"
+                    onClick={() => setSaveState('naming')}
+                    className="rounded-full border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-fg shadow-sm transition hover:border-accent hover:text-accent"
+                  >
+                    Save list
+                  </button>
+                </span>
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="text-sm font-medium text-negative underline-offset-2 hover:underline"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+            {/* Mounted with the footer, so the confirmation is announced;
+                the negative margin cancels the gap while it's empty. */}
+            <p
+              role="status"
+              className={`text-xs ${saveState?.id ? '' : '-mt-2'} ${saveState?.warn ? 'font-semibold text-warning' : 'text-fg-muted'}`}
+            >
+              {saveState?.id && (
+                <>
+                  {saveState.text}{' '}
+                  <Button variant="link" size="inline" onClick={() => onOpenSavedLists(saveState.id)}>
+                    Open in Saved lists
+                  </Button>
+                </>
+              )}
+            </p>
           </div>
         )}
       </div>

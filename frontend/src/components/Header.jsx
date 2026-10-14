@@ -6,9 +6,24 @@ import { IconButton, Segmented } from './controls'
 import { formatDateTime, isoToMinute, timeAgo } from '../history'
 import { CONTAINER } from '../ui'
 
+// Short labels until lg: from md the switcher shares the title's row, and
+// the full ones would squeeze the title there.
 const VIEWS = [
   ['search', 'Search'],
-  ['movers', 'Market Movers'],
+  [
+    'movers',
+    <>
+      <span className="lg:hidden">Movers</span>
+      <span className="hidden lg:inline">Market Movers</span>
+    </>,
+  ],
+  [
+    'lists',
+    <>
+      <span className="lg:hidden">Lists</span>
+      <span className="hidden lg:inline">Saved lists</span>
+    </>,
+  ],
 ]
 
 // Re-render once a minute so "updated 25m ago" keeps counting.
@@ -72,9 +87,11 @@ function Header({ meta, theme, onToggleTheme, view, onViewChange, currency, onCu
           </div>
         </div>
 
-        <div className="order-last flex w-full items-center justify-between gap-2 sm:order-none sm:w-auto sm:justify-end">
+        {/* Its own row below md (wrapping the currency picker under the views
+            on the narrowest phones); beside the title from md up. */}
+        <div className="order-last flex w-full flex-wrap items-center justify-between gap-2 md:order-none md:w-auto md:justify-end">
           <Segmented label="View" options={VIEWS} value={view} onChange={onViewChange} />
-          <CurrencySelector value={currency} onChange={onCurrencyChange} />
+          <CurrencySelector value={currency} onChange={onCurrencyChange} className="ml-auto md:ml-0" />
         </div>
 
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />

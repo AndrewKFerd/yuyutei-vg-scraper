@@ -11,7 +11,7 @@ export const MAX_QTY = 99
 // How long the bar offers "Undo" after a removal.
 const UNDO_MS = 8000
 
-const clampQty = (n) => Math.min(MAX_QTY, Math.max(1, Math.round(Number(n)) || 1))
+export const clampQty = (n) => Math.min(MAX_QTY, Math.max(1, Math.round(Number(n)) || 1))
 const nameOf = (src) => src.nameEn || src.nameJp || src.setCode || 'card'
 
 function snapOf(card) {
@@ -27,8 +27,8 @@ function snapOf(card) {
   }
 }
 
-const numOrNull = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
-const strOrNull = (v) => (typeof v === 'string' && v ? v : null)
+export const numOrNull = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+export const strOrNull = (v) => (typeof v === 'string' && v ? v : null)
 
 // Storage is shared with other tabs and could hold anything, so every field
 // is re-validated on the way in rather than trusted.
@@ -258,6 +258,31 @@ export function useCalculator({ cardsById, catalogReady, catalogGeneratedAt }) {
     commit([], { text: `List cleared (${prev.length} ${prev.length === 1 ? 'card' : 'cards'})`, kind: 'cleared', undo: prev })
   }, [commit])
 
+  // Swap in a whole list (a saved list being loaded), with Undo back to what
+  // was there. `entries` are { id, qty, snap }: a card the catalog has takes
+  // its current data, as if just added; one it doesn't keeps `snap` (at 0, so
+  // any catalog that does have it wins).
+  const replaceAll = useCallback(
+    (entries, text) => {
+      const prev = itemsRef.current
+      const seen = new Set()
+      const next = []
+      for (const { id, qty, snap } of entries) {
+        if (seen.has(id)) continue
+        seen.add(id)
+        const card = cardsByIdRef.current.get(id)
+        next.push(
+          card
+            ? { id, qty: clampQty(qty), at: atFor(card), snap: snapOf(card) }
+            : { id, qty: clampQty(qty), at: 0, snap: snapOf(snap) }
+        )
+        if (next.length >= MAX_ITEMS) break
+      }
+      commit(next, { text, undo: prev.length > 0 ? prev : null })
+    },
+    [atFor, commit]
+  )
+
   const undo = useCallback(() => {
     const info = undoRef.current
     if (!info) return
@@ -350,7 +375,7 @@ export function useCalculator({ cardsById, catalogReady, catalogGeneratedAt }) {
 
   const totals = useMemo(() => computeTotals(lines), [lines])
 
-  return { items, qtyById, lines, totals, toggle, setQtyFor, setQty, remove, clear, undo, undoInfo, message }
+  return { items, qtyById, lines, totals, toggle, setQtyFor, setQty, remove, clear, replaceAll, undo, undoInfo, message }
 }
 
 const jpy = (n) => formatPrice(n, 'JPY', null)

@@ -4,6 +4,7 @@ import { getRates } from './currency'
 import { DEFAULT_MOVER_WINDOW, MOVER_WINDOWS } from './history'
 import { applyTheme, getInitialTheme } from './theme'
 import { useCalculator } from './useCalculator'
+import { useSavedLists } from './useSavedLists'
 import { buildSetOptions, setLabel } from './sets'
 import { SORT_OPTIONS, sortCards } from './sorting'
 import { CONTAINER } from './ui'
@@ -14,6 +15,7 @@ import RaritySections from './components/RaritySections'
 import CardModal from './components/CardModal'
 import CalculatorBar, { CalculatorPanel } from './components/CalculatorBar'
 import MoversView, { DEFAULT_MIN_PRICE } from './components/MoversView'
+import SavedListsView from './components/SavedListsView'
 import Pagination from './components/Pagination'
 import Footer from './components/Footer'
 import Icon from './components/icons'
@@ -33,19 +35,22 @@ const RARITY_ORDER = ['SEC', 'SP', 'FFR', 'SR', 'RRR', 'RR', 'R', 'C']
 const PAGE_SIZE = 50
 
 const SORT_KEYS = SORT_OPTIONS.map(([key]) => key)
+const VIEWS = ['search', 'movers', 'lists']
 
 // Shareable URL state, no router dependency. Search view: ?q= (text),
 // &set=<slug>, &rarity=, &sort= and &page= (defaults left out). Movers:
 // ?view=movers, &w=24h|30d (the 7d default is left out) and &nation=<code>.
-// Either view: &card=<id> opens that card's modal. Set, rarity and nation
-// are checked against the catalog once it has loaded.
+// Saved lists: ?view=lists (the lists themselves are local to the browser,
+// so which one is open isn't shared). Any view: &card=<id> opens that card's
+// modal. Set, rarity and nation are checked against the catalog once it has
+// loaded.
 function readUrlState() {
   const params = new URLSearchParams(window.location.search)
   const w = params.get('w')
   const sort = params.get('sort')
   const page = Number(params.get('page'))
   return {
-    view: params.get('view') === 'movers' ? 'movers' : 'search',
+    view: VIEWS.includes(params.get('view')) ? params.get('view') : 'search',
     moversWindow: MOVER_WINDOWS.includes(w) ? w : DEFAULT_MOVER_WINDOW,
     moversNation: params.get('nation') || '',
     cardId: params.get('card') || null,
@@ -116,7 +121,7 @@ function App() {
   const [selection, setSelection] = useState({ card: null, list: null })
   const selectedCard = selection.card
   const [theme, setTheme] = useState(getInitialTheme)
-  const [view, setView] = useState(initialUrl.view) // 'search' | 'movers'
+  const [view, setView] = useState(initialUrl.view) // 'search' | 'movers' | 'lists'
   const [moversWindow, setMoversWindow] = useState(initialUrl.moversWindow)
   const [minPrice, setMinPrice] = useState(DEFAULT_MIN_PRICE)
   const [moversNation, setMoversNation] = useState(initialUrl.moversNation) // '' = all nations
@@ -155,6 +160,19 @@ function App() {
   const closeCalc = useCallback(() => setCalcOpen(false), [])
   const openCalc = useCallback(() => setCalcOpen(true), [])
   const calcButtonRef = useRef(null)
+
+  // Saved lists: stored by the hook; which one the view has open lives here
+  // so the price list panel can open straight onto a list it just saved.
+  const savedLists = useSavedLists()
+  const [activeListId, setActiveListId] = useState(null)
+  const openSavedLists = useCallback((listId) => {
+    if (listId) setActiveListId(listId)
+    setCalcOpen(false)
+    setView('lists')
+    // After the panel has closed (and handed focus back to "View list"),
+    // land on the view's heading, scrolling it into view.
+    requestAnimationFrame(() => document.getElementById('saved-lists-title')?.focus())
+  }, [])
 
   // Keeps the input snappy: the text state updates immediately on every
   // keystroke, while the (potentially expensive) filtered grid re-render
@@ -196,6 +214,8 @@ function App() {
       cancelled = true
     }
   }, [loadAttempt, applyCatalog])
+
+  const retryCatalog = useCallback(() => setLoadAttempt((n) => n + 1), [])
 
   // Manual "get the latest data now" escape hatch — bypasses the catalog
   // cache instead of waiting for it to expire on its own. A failure only
@@ -398,9 +418,10 @@ function App() {
     const params = new URLSearchParams(window.location.search)
     const put = (key, value) => (value ? params.set(key, value) : params.delete(key))
     const search = view === 'search'
-    put('view', search ? '' : 'movers')
-    put('w', !search && moversWindow !== DEFAULT_MOVER_WINDOW ? moversWindow : '')
-    put('nation', !search ? moversNation : '')
+    const movers = view === 'movers'
+    put('view', search ? '' : view)
+    put('w', movers && moversWindow !== DEFAULT_MOVER_WINDOW ? moversWindow : '')
+    put('nation', movers ? moversNation : '')
     put('q', search ? deferredQuery.trim() : '')
     put('set', search ? setSlug : '')
     put('rarity', search ? rarity : '')
@@ -592,11 +613,28 @@ function App() {
           />
         )}
 
-        {status === 'error' && (
+        {/* Saved lists live in this browser, not the catalog, so they show
+            even when it fails to load (the view says so itself). */}
+        {view === 'lists' && (
+          <SavedListsView
+            saved={savedLists}
+            calc={calc}
+            cardsById={cardsById}
+            catalogStatus={status}
+            onRetryCatalog={retryCatalog}
+            currency={currency}
+            rates={rates}
+            activeId={activeListId}
+            onActiveChange={setActiveListId}
+            onSelectCard={selectCard}
+          />
+        )}
+
+        {status === 'error' && view !== 'lists' && (
           <div role="alert" className="mx-auto flex max-w-md flex-col items-center gap-3 px-4 py-16 text-center">
             <p className="text-base font-semibold text-fg">Couldn’t load the card catalog</p>
             <p className="text-sm text-fg-muted">{errorMessage}</p>
-            <Button variant="primary" onClick={() => setLoadAttempt((n) => n + 1)}>
+            <Button variant="primary" onClick={retryCatalog}>
               <Icon name="refresh" className="h-4 w-4" />
               Try again
             </Button>
@@ -635,10 +673,12 @@ function App() {
       {calcOpen && (
         <CalculatorPanel
           calc={calc}
+          saved={savedLists}
           currency={currency}
           rates={rates}
           onClose={closeCalc}
           onOpenCard={selectCard}
+          onOpenSavedLists={openSavedLists}
           suspended={Boolean(selectedCard)}
           returnFocusRef={calcButtonRef}
         />
