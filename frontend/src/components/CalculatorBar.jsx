@@ -48,13 +48,21 @@ function CalculatorBar({ calc, currency, rates, visible, panelOpen, onOpenPanel,
   }
   const announcement = announced.text
 
+  // The total gives a small bump each time copies are added (not removed),
+  // by remounting it keyed on a count of additions. Same render-time state
+  // pattern as above.
+  const [bump, setBump] = useState({ copies: totals.copies, n: 0 })
+  if (bump.copies !== totals.copies) {
+    setBump({ copies: totals.copies, n: totals.copies > bump.copies ? bump.n + 1 : bump.n })
+  }
+
   return (
     <>
       <p className="sr-only" aria-live="polite">
         {announcement}
       </p>
       {visible && (
-        <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="fixed inset-x-0 bottom-0 z-40 animate-rise px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-xl border border-line bg-surface/95 px-4 py-2.5 shadow-lg backdrop-blur">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-xs text-fg-muted">
@@ -85,7 +93,9 @@ function CalculatorBar({ calc, currency, rates, visible, panelOpen, onOpenPanel,
               </div>
               {hasItems && (
                 <div className="flex items-baseline gap-2 truncate">
-                  <span className="text-lg font-bold tabular-nums text-accent">{total.main}</span>
+                  <span key={bump.n} className={`text-lg font-bold tabular-nums text-accent ${bump.n ? 'animate-bump' : ''}`}>
+                    {total.main}
+                  </span>
                   {total.jpy && <span className="text-xs text-fg-muted">{total.jpy}</span>}
                 </div>
               )}

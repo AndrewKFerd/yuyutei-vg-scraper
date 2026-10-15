@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import RarityBadge from './RarityBadge'
 import DeltaChip from './DeltaChip'
 import Icon from './icons'
@@ -25,6 +25,12 @@ function CardTile({ card, currency, rates, onSelect, delta, caption, selectedQty
 
   const name = card.nameEn || card.nameJp
   const selected = selectedQty > 0
+  const [pops, setPops] = useState(0)
+  // A price that changes under a mounted tile (a catalog refresh; tiles are
+  // keyed by card id) flashes once. State set during render, as in
+  // CalculatorBar; the count keys the price so the flash restarts.
+  const [seen, setSeen] = useState({ price: card.price, flashes: 0 })
+  if (!Object.is(seen.price, card.price)) setSeen({ price: card.price, flashes: seen.flashes + 1 })
   const toggleLabel = selected
     ? `Remove ${name} from price list (${selectedQty} ${selectedQty === 1 ? 'copy' : 'copies'})`
     : `Add ${name} to price list`
@@ -78,7 +84,12 @@ function CardTile({ card, currency, rates, onSelect, delta, caption, selectedQty
           <span className="truncate font-mono text-xs text-fg-subtle">{card.setCode}</span>
           <span className="line-clamp-2 text-[13px] font-medium leading-snug text-fg">{name}</span>
           <div className="mt-auto flex flex-wrap items-baseline justify-between gap-x-2 pt-1">
-            <span className="text-sm font-bold tabular-nums text-accent">{displayPrice}</span>
+            <span
+              key={seen.flashes}
+              className={`-mx-1 rounded px-1 text-sm font-bold tabular-nums text-accent ${seen.flashes ? 'animate-flash' : ''}`}
+            >
+              {displayPrice}
+            </span>
             <span className={`text-xs font-medium ${inStock ? 'text-positive' : 'text-negative'}`}>{stockLabel}</span>
           </div>
           {caption && <span className="truncate text-xs text-fg-muted">{caption}</span>}
@@ -91,7 +102,10 @@ function CardTile({ card, currency, rates, onSelect, delta, caption, selectedQty
       <div className="pointer-events-none absolute inset-x-px top-px aspect-[100/140]">
         <button
           type="button"
-          onClick={() => onToggle(card)}
+          onClick={() => {
+            if (!selected) setPops((n) => n + 1)
+            onToggle(card)
+          }}
           aria-label={toggleLabel}
           title={toggleLabel}
           className={`pointer-events-auto absolute bottom-1.5 right-1.5 flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold tabular-nums shadow-md transition ${
@@ -100,15 +114,19 @@ function CardTile({ card, currency, rates, onSelect, delta, caption, selectedQty
               : 'bg-surface/90 text-fg ring-1 ring-line-strong hover:bg-surface hover:text-accent'
           }`}
         >
-          {!selected ? (
-            <Icon name="plus" className="h-4 w-4" />
-          ) : selectedQty === 1 ? (
-            <Icon name="check" className="h-4 w-4" />
-          ) : selectedQty < 10 ? (
-            `×${selectedQty}`
-          ) : (
-            selectedQty
-          )}
+          {/* Pops when switched on here (keyed on the count of switch-ons),
+              not when a tile renders already selected. */}
+          <span key={pops} className={`flex ${selected && pops ? 'animate-pop' : ''}`}>
+            {!selected ? (
+              <Icon name="plus" className="h-4 w-4" />
+            ) : selectedQty === 1 ? (
+              <Icon name="check" className="h-4 w-4" />
+            ) : selectedQty < 10 ? (
+              `×${selectedQty}`
+            ) : (
+              selectedQty
+            )}
+          </span>
         </button>
       </div>
     </div>

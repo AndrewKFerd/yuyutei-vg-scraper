@@ -36,6 +36,21 @@ function useMinuteTick() {
   return now
 }
 
+// `on`, but only once it has stayed on for `delay` ms, so a quick refresh
+// doesn't flash the loading animation. Off follows straight away.
+function useDelayedFlag(on, delay) {
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    if (!on) return
+    const id = setTimeout(() => setShown(true), delay)
+    return () => {
+      clearTimeout(id)
+      setShown(false)
+    }
+  }, [on, delay])
+  return on && shown
+}
+
 // "28,123 cards · updated 25m ago [↻]": how fresh the numbers on
 // screen are is the first thing a price tool should answer.
 function Freshness({ meta, onRefresh, isRefreshing, refreshError }) {
@@ -58,7 +73,7 @@ function Freshness({ meta, onRefresh, isRefreshing, refreshError }) {
             label={isRefreshing ? 'Checking for newer prices…' : 'Check for newer prices'}
             onClick={onRefresh}
             disabled={isRefreshing}
-            className={`-my-1 disabled:cursor-wait ${isRefreshing ? '[&>svg]:animate-spin' : ''}`}
+            className="-my-1 disabled:cursor-wait"
           />
           {refreshError && (
             <span role="alert" title={refreshError} className="basis-full text-negative">
@@ -73,12 +88,14 @@ function Freshness({ meta, onRefresh, isRefreshing, refreshError }) {
   )
 }
 
-function Header({ meta, theme, onToggleTheme, view, onViewChange, currency, onCurrencyChange, onRefresh, isRefreshing, refreshError }) {
+function Header({ meta, busy, theme, onToggleTheme, view, onViewChange, currency, onCurrencyChange, onRefresh, isRefreshing, refreshError }) {
+  const animateLogo = useDelayedFlag(busy, 300)
   return (
-    <header className="border-b border-line bg-surface">
+    <header className="site-header border-b border-line bg-surface">
       <div className={`${CONTAINER} flex flex-wrap items-center gap-x-5 gap-y-2 py-3`}>
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <Logo className="h-9 w-9 shrink-0" />
+          {/* The mark doubles as the loading indicator (catalog load, refresh). */}
+          <Logo animated={animateLogo} className="h-9 w-9 shrink-0" />
           <div className="min-w-0">
             <h1 className="truncate text-lg font-extrabold leading-tight tracking-tight text-fg sm:text-xl">
               Yuyu-tei Card Search

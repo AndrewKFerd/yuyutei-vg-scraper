@@ -162,6 +162,102 @@ html.dark {
   outline-offset: 2px;
 }
 
+/* The app mark while something real is loading (<Logo animated>): the back
+   card fans out, the front card tilts in and the price line draws itself.
+   Each part starts and ends on the static artwork's own transform (CSS
+   overrides the SVG attribute only while animating), pivoting on the same
+   points in the 32x32 viewBox. */
+.logo-animated .logo-back {
+  transform-box: view-box;
+  transform-origin: 15px 15px;
+  animation: logo-fan 1.6s ease-in-out infinite;
+}
+.logo-animated .logo-front {
+  transform-box: view-box;
+  transform-origin: 17.5px 17px;
+  animation: logo-tilt 1.6s ease-in-out infinite;
+}
+.logo-animated .logo-line {
+  stroke-dasharray: 1;
+  animation: logo-draw 1.6s ease-in-out infinite;
+}
+@keyframes logo-fan {
+  0%, 100% { transform: rotate(-10deg); }
+  45%, 60% { transform: rotate(-17deg); }
+}
+@keyframes logo-tilt {
+  0%, 100% { transform: rotate(6deg); }
+  45%, 60% { transform: rotate(1deg); }
+}
+@keyframes logo-draw {
+  0% { stroke-dashoffset: 1; opacity: 1; }
+  50%, 80% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+/* One-shot motion: dialogs fading in, the price list's total when copies
+   are added, a tile's toggle when it's switched on, the price list bar
+   arriving, and a price that changed on a refresh. */
+@keyframes fade {
+  from { opacity: 0; }
+}
+@keyframes dialog-in {
+  from { opacity: 0; transform: scale(0.98); }
+}
+.animate-fade {
+  animation: fade 150ms ease-out;
+}
+.animate-dialog {
+  animation: dialog-in 160ms ease-out;
+}
+@keyframes bump {
+  0%, 100% { transform: scale(1); }
+  40% { transform: scale(1.08); }
+}
+@keyframes pop {
+  from { transform: scale(0.8); }
+  to { transform: scale(1); }
+}
+@keyframes rise {
+  from { transform: translateY(1rem); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.animate-bump {
+  display: inline-block;
+  transform-origin: left center;
+  animation: bump 180ms ease-out;
+}
+.animate-pop {
+  animation: pop 160ms ease-out;
+}
+.animate-rise {
+  animation: rise 200ms ease-out;
+}
+@keyframes flash {
+  from { background-color: var(--accent-soft); }
+}
+.animate-flash {
+  animation: flash 1.2s ease-out;
+}
+
+/* Switching views cross-fades the page (App.jsx changeView). The header
+   is its own layer and shows only its live state, so the view switcher's
+   sliding pill isn't ghosted by the old snapshot. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 150ms;
+  animation-timing-function: ease-out;
+}
+.site-header {
+  view-transition-name: site-header;
+}
+::view-transition-old(site-header) {
+  display: none;
+}
+::view-transition-new(site-header) {
+  animation: none;
+}
+
 /* Motion is decoration here, never information: drop it for anyone who
    asked their OS for less. */
 @media (prefers-reduced-motion: reduce) {

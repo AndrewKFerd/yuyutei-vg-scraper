@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import CardTile from './CardTile'
 import { GridSkeleton } from './CardGrid'
 import Icon from './icons'
+import { EmptyMark } from './Logo'
 import { Button, Segmented, Select } from './controls'
 import { formatPrice } from '../currency'
 import { CONTAINER, GRID } from '../ui'
@@ -419,6 +420,11 @@ function MoversView({
       </div>
 
       {loading && <GridSkeleton count={8} className="mt-6" />}
+      {!loading && !sections && (
+        <div className="flex justify-center py-16">
+          <EmptyMark icon={failed ? 'info' : 'restock'} />
+        </div>
+      )}
 
       {sections && (
         <>

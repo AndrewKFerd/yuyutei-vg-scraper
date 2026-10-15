@@ -1,4 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { fetchCatalog, refreshCatalog } from './api'
 import { getRates } from './currency'
 import { DEFAULT_MOVER_WINDOW, MOVER_WINDOWS } from './history'
@@ -9,6 +10,7 @@ import { buildSetOptions, setLabel } from './sets'
 import { SORT_OPTIONS, sortCards } from './sorting'
 import { CONTAINER } from './ui'
 import Header from './components/Header'
+import { EmptyMark } from './components/Logo'
 import { FilterSummary, SearchToolbar } from './components/SearchToolbar'
 import CardGrid, { GridSkeleton } from './components/CardGrid'
 import RaritySections from './components/RaritySections'
@@ -122,6 +124,12 @@ function App() {
   const selectedCard = selection.card
   const [theme, setTheme] = useState(getInitialTheme)
   const [view, setView] = useState(initialUrl.view) // 'search' | 'movers' | 'lists'
+  // The header's view switcher: a short cross-fade where the browser has
+  // view transitions (styles in index.css), an instant switch otherwise.
+  const changeView = useCallback((next) => {
+    if (!document.startViewTransition || prefersReducedMotion()) return setView(next)
+    document.startViewTransition(() => flushSync(() => setView(next)))
+  }, [])
   const [moversWindow, setMoversWindow] = useState(initialUrl.moversWindow)
   const [minPrice, setMinPrice] = useState(DEFAULT_MIN_PRICE)
   const [moversNation, setMoversNation] = useState(initialUrl.moversNation) // '' = all nations
@@ -480,10 +488,11 @@ function App() {
     <div className={`flex min-h-screen flex-col bg-bg ${calcBarVisible ? 'pb-28' : ''}`}>
       <Header
         meta={meta}
+        busy={status === 'loading' || isRefreshing}
         theme={theme}
         onToggleTheme={toggleTheme}
         view={view}
-        onViewChange={setView}
+        onViewChange={changeView}
         currency={currency}
         onCurrencyChange={setCurrency}
         onRefresh={handleRefresh}
@@ -533,7 +542,7 @@ function App() {
 
           {status === 'ready' && filteredCards.length === 0 && (
             <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-16 text-center">
-              <Icon name="search" className="h-8 w-8 text-fg-subtle" />
+              <EmptyMark icon="search" />
               <p className="text-base font-semibold text-fg">
                 {isFiltered ? 'No cards match' : 'The catalog is empty'}
               </p>
@@ -632,6 +641,7 @@ function App() {
 
         {status === 'error' && view !== 'lists' && (
           <div role="alert" className="mx-auto flex max-w-md flex-col items-center gap-3 px-4 py-16 text-center">
+            <EmptyMark icon="info" />
             <p className="text-base font-semibold text-fg">Couldn’t load the card catalog</p>
             <p className="text-sm text-fg-muted">{errorMessage}</p>
             <Button variant="primary" onClick={retryCatalog}>

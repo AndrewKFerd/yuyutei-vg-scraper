@@ -55,7 +55,7 @@ function Lightbox({ src, alt, onClose }) {
         e.stopPropagation()
         onClose()
       }}
-      className="fixed inset-0 z-[60] flex cursor-zoom-out items-center justify-center bg-night-950/90 p-3 outline-none"
+      className="fixed inset-0 z-[60] flex animate-fade cursor-zoom-out items-center justify-center bg-night-950/90 p-3 outline-none"
     >
       <img src={src} alt={alt} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" />
       {/* Pointer users already closed it on mousedown above; onClick is
@@ -473,7 +473,7 @@ function CardModal({
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-4 dark:bg-night-950/75"
+      className="fixed inset-0 z-50 flex animate-fade items-center justify-center bg-slate-900/60 p-3 sm:p-4 dark:bg-night-950/75"
     >
       <div
         ref={dialogRef}
@@ -481,7 +481,7 @@ function CardModal({
         aria-modal="true"
         aria-labelledby="card-modal-title"
         tabIndex={-1}
-        className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-surface shadow-xl outline-none"
+        className="flex max-h-[92vh] w-full max-w-2xl animate-dialog flex-col overflow-hidden rounded-xl bg-surface shadow-xl outline-none"
       >
         {/* Top bar: previous/next and close, outside the scrolling content
             so they never scroll out of reach (the same reason price, stock

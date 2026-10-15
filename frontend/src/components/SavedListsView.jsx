@@ -3,6 +3,7 @@ import DeltaChip from './DeltaChip'
 import RarityBadge from './RarityBadge'
 import SaveListForm from './SaveListForm'
 import Icon from './icons'
+import { EmptyMark } from './Logo'
 import { Button, IconButton } from './controls'
 import { formatPrice } from '../currency'
 import { derivedDetailUrl, derivedImageUrl } from '../catalogFormat'
@@ -803,7 +804,7 @@ function SavedListsView({
         </>
       ) : (
         <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-16 text-center">
-          <Icon name="table" className="h-8 w-8 text-fg-subtle" />
+          <EmptyMark icon="table" />
           <p className="text-base font-semibold text-fg">No saved lists yet</p>
           <p className="text-sm text-fg-muted">
             {calcEmpty
