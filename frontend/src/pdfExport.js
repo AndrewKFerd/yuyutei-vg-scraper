@@ -30,6 +30,13 @@ const GAP_X = 10
 const GAP_Y = 8
 const CAPTION_H = 30
 const PER_PAGE = 4
+const WATERMARK = 64
+const WATERMARK_ALPHA = 0.12
+
+const APP_NAME = 'Yuyu-tei Card Search'
+// The app mark (same artwork as Logo.jsx). Same-origin, so it leaves the
+// canvas readable; drawn at whatever size the page wants, as it's a vector.
+const LOGO_URL = '/favicon.svg'
 
 // The light theme's tokens (index.css), whatever theme the page is in: a
 // PDF is for paper.
@@ -264,7 +271,7 @@ function drawCard(ctx, row, img, box, { currency, rates, pricesReady, font }) {
 }
 
 function drawPage(ctx, rows, art, page, pageCount, info) {
-  const { list, totals, currency, rates, font } = info
+  const { list, totals, currency, rates, font, logo } = info
   const W = ctx.canvas.width
   const H = ctx.canvas.height
   const left = px(MARGIN)
@@ -273,7 +280,8 @@ function drawPage(ctx, rows, art, page, pageCount, info) {
   ctx.fillRect(0, 0, W, H)
   ctx.textBaseline = 'middle'
 
-  // Header: list name and its total, then counts and the save date.
+  // Header: list name and its total, then counts, the save date and where
+  // the prices came from.
   const titleY = px(MARGIN) + pt(9)
   ctx.font = font(700, 13)
   ctx.textAlign = 'right'
@@ -289,8 +297,9 @@ function drawPage(ctx, rows, art, page, pageCount, info) {
   ctx.font = font(400, 8.5)
   ctx.fillStyle = INK.muted
   const cards = rows.length
+  const converted = currency !== 'JPY' && Boolean(rates)
   ctx.fillText(
-    `${cards} ${cards === 1 ? 'card' : 'cards'} · ${totals.copies} ${totals.copies === 1 ? 'copy' : 'copies'} · saved ${formatDate(Math.floor(list.createdAt / 60000), { year: true })}`,
+    `${cards} ${cards === 1 ? 'card' : 'cards'} · ${totals.copies} ${totals.copies === 1 ? 'copy' : 'copies'} · saved ${formatDate(Math.floor(list.createdAt / 60000), { year: true })} · prices from yuyu-tei.jp${converted ? ', conversions approximate' : ''}`,
     left,
     titleY + pt(15)
   )
@@ -314,18 +323,38 @@ function drawPage(ctx, rows, art, page, pageCount, info) {
     drawCard(ctx, rows[start + i], art[start + i], box, info)
   }
 
-  // Footer.
+  // Watermark: the app mark, faint, over the middle of the page (and so
+  // across the inner corners of all four cards), so a printout or a
+  // screenshot of one still says where it came from.
+  if (logo) {
+    const size = px(WATERMARK)
+    ctx.save()
+    ctx.globalAlpha = WATERMARK_ALPHA
+    ctx.drawImage(logo, (W - size) / 2, (gridTop + gridBottom - size) / 2, size, size)
+    ctx.restore()
+  }
+
+  // Footer: the mark and the app's name and address, then the page.
   const footY = H - px(MARGIN) + px(2)
+  let x = left
+  if (logo) {
+    const size = px(5)
+    ctx.drawImage(logo, x, footY - size / 2, size, size)
+    x += size + px(2)
+  }
+  ctx.font = font(700, 8)
+  ctx.fillStyle = INK.fg
+  ctx.fillText(APP_NAME, x, footY)
+  x += ctx.measureText(APP_NAME).width
   ctx.font = font(400, 7.5)
   ctx.fillStyle = INK.subtle
-  const converted = currency !== 'JPY' && Boolean(rates)
+  ctx.fillText(`  ·  ${location.host}`, x, footY)
+  ctx.textAlign = 'right'
   ctx.fillText(
-    `Prices from yuyu-tei.jp when the list was saved${converted ? '; conversions approximate' : ''} · exported ${formatDate(Math.floor(Date.now() / 60000), { year: true })}`,
-    left,
+    `Exported ${formatDate(Math.floor(Date.now() / 60000), { year: true })} · Page ${page + 1} of ${pageCount}`,
+    right,
     footY
   )
-  ctx.textAlign = 'right'
-  ctx.fillText(`Page ${page + 1} of ${pageCount}`, right, footY)
   ctx.textAlign = 'left'
 }
 
@@ -408,7 +437,7 @@ function buildPdf(pages, title) {
  * (they print with a blank frame).
  */
 export async function buildListPdf({ list, rows, totals, currency, rates, pricesReady, onProgress }) {
-  const art = await loadAllArt(rows, onProgress)
+  const [art, logo] = await Promise.all([loadAllArt(rows, onProgress), loadImage(LOGO_URL)])
   await document.fonts?.ready
   const family = getComputedStyle(document.body).fontFamily || 'sans-serif'
   const mono = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
@@ -419,7 +448,7 @@ export async function buildListPdf({ list, rows, totals, currency, rates, prices
   canvas.height = px(PAGE_H_MM)
   const ctx = canvas.getContext('2d')
   const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE))
-  const info = { list, totals, currency, rates, pricesReady, font }
+  const info = { list, totals, currency, rates, pricesReady, font, logo }
   const pages = []
   for (let page = 0; page < pageCount; page++) {
     drawPage(ctx, rows, art, page, pageCount, info)
