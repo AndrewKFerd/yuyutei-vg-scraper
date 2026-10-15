@@ -117,10 +117,9 @@ function sheetToCsv(rows, totals) {
   return lines.map((cells) => cells.map(csvCell).join(',')).join('\r\n')
 }
 
-function downloadCsv(name, text) {
-  const filename = `${name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'saved-list'}.csv`
-  // The BOM tells Excel the file is UTF-8, so Japanese names survive.
-  const url = URL.createObjectURL(new Blob(['﻿', text], { type: 'text/csv;charset=utf-8' }))
+function download(name, extension, blob) {
+  const filename = `${name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'saved-list'}.${extension}`
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = filename
@@ -240,6 +239,9 @@ function ConfirmBar({ text, confirmLabel, danger = false, onConfirm, onCancel })
 function Sheet({ list, saved, calc, cardsById, catalogStatus, currency, rates, onSelectCard, onDelete, announce }) {
   // null | 'rename' | 'delete' | 'load'
   const [mode, setMode] = useState(null)
+  // { done, total } art downloads while a PDF is being made, else null.
+  const [pdf, setPdf] = useState(null)
+  const [pdfNote, setPdfNote] = useState(null)
   const gridRef = useRef(null)
   const panelRef = useRef(null)
   const renameRef = useRef(null)
@@ -319,8 +321,40 @@ function Sheet({ list, saved, calc, cardsById, catalogStatus, currency, rates, o
   }
 
   const exportCsv = () => {
-    const filename = downloadCsv(list.name, sheetToCsv(rows, totals))
-    announce(`Downloaded ${filename}`)
+    // The BOM tells Excel the file is UTF-8, so Japanese names survive.
+    const blob = new Blob(['﻿', sheetToCsv(rows, totals)], { type: 'text/csv;charset=utf-8' })
+    announce(`Downloaded ${download(list.name, 'csv', blob)}`)
+  }
+
+  // The PDF code (and its canvas work) loads only when asked for. Fetching
+  // the card art is the slow part, so the button counts it off.
+  const exportPdf = async () => {
+    setPdf({ done: 0, total: rows.length })
+    setPdfNote(null)
+    try {
+      const { buildListPdf } = await import('../pdfExport')
+      const { blob, missing } = await buildListPdf({
+        list,
+        rows,
+        totals,
+        currency,
+        rates,
+        pricesReady,
+        onProgress: (done, total) => setPdf({ done, total }),
+      })
+      const filename = download(list.name, 'pdf', blob)
+      const note = missing
+        ? `${plural(missing, 'card image', 'card images')} couldn’t be loaded and ${missing === 1 ? 'is' : 'are'} left blank.`
+        : null
+      setPdfNote(note)
+      announce(`Downloaded ${filename}${note ? `. ${note}` : ''}`)
+    } catch {
+      const note = 'Couldn’t make the PDF. Check your connection and try again.'
+      setPdfNote(note)
+      announce(note)
+    } finally {
+      setPdf(null)
+    }
   }
 
   // Totals row, by column key; columns not here stay blank.
@@ -379,19 +413,22 @@ function Sheet({ list, saved, calc, cardsById, catalogStatus, currency, rates, o
             </p>
           </div>
         )}
-        {/* Two pairs, so a narrow screen wraps between them, not mid-pair. */}
+        {/* Groups, so a narrow screen wraps between them, not mid-group. */}
         <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            ref={loadRef}
+            size="sm"
+            onClick={() => (calc.items.length > 0 ? setMode('load') : load())}
+            disabled={empty}
+          >
+            Load into price list
+          </Button>
           <span className="flex items-center gap-1.5">
-            <Button
-              ref={loadRef}
-              size="sm"
-              onClick={() => (calc.items.length > 0 ? setMode('load') : load())}
-              disabled={empty}
-            >
-              Load into price list
-            </Button>
             <Button size="sm" onClick={exportCsv} disabled={empty}>
               Export CSV
+            </Button>
+            <Button size="sm" onClick={exportPdf} disabled={empty || pdf !== null} aria-busy={pdf !== null}>
+              {pdf ? `Making PDF… ${pdf.done}/${pdf.total}` : 'Export PDF'}
             </Button>
           </span>
           <span className="flex items-center gap-1.5">
@@ -421,6 +458,13 @@ function Sheet({ list, saved, calc, cardsById, catalogStatus, currency, rates, o
           onConfirm={load}
           onCancel={() => closeMode(loadRef)}
         />
+      )}
+      {pdfNote && (
+        <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-xs text-fg-muted sm:px-4">
+          <Icon name="info" className="h-4 w-4 shrink-0 text-warning" />
+          <span className="min-w-0 flex-1">{pdfNote}</span>
+          <IconButton icon="close" size="sm" label="Dismiss" onClick={() => setPdfNote(null)} />
+        </div>
       )}
       {undoInfo && (
         <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-xs text-fg-muted sm:px-4">
