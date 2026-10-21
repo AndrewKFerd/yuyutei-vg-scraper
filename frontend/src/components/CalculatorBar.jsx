@@ -290,7 +290,7 @@ export function CalculatorPanel({ calc, saved, currency, rates, onClose, onOpenC
         aria-modal="true"
         aria-labelledby="calc-title"
         tabIndex={-1}
-        className="absolute inset-x-0 bottom-0 flex max-h-[85vh] flex-col rounded-t-xl bg-surface shadow-xl outline-none sm:inset-x-auto sm:bottom-4 sm:right-4 sm:w-[30rem] sm:rounded-xl"
+        className="absolute inset-x-0 bottom-0 flex max-h-[85vh] supports-[height:100dvh]:max-h-[85dvh] flex-col rounded-t-xl bg-surface shadow-xl outline-none sm:inset-x-auto sm:bottom-4 sm:right-4 sm:w-[30rem] sm:rounded-xl"
       >
         <div className="flex items-center justify-between gap-2 border-b border-line py-1 pl-4 pr-2">
           <h2 id="calc-title" className="text-base font-bold text-fg">

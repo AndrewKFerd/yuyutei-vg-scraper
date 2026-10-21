@@ -473,7 +473,7 @@ function CardModal({
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
-      className="fixed inset-0 z-50 flex animate-fade items-center justify-center bg-slate-900/60 p-3 sm:p-4 dark:bg-night-950/75"
+      className="fixed inset-0 z-50 flex animate-fade items-center justify-center bg-slate-900/60 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4 dark:bg-night-950/75"
     >
       <div
         ref={dialogRef}
@@ -481,8 +481,12 @@ function CardModal({
         aria-modal="true"
         aria-labelledby="card-modal-title"
         tabIndex={-1}
-        className="flex max-h-[92vh] w-full max-w-2xl animate-dialog flex-col overflow-hidden rounded-xl bg-surface shadow-xl outline-none"
+        className="flex max-h-[92vh] supports-[height:100dvh]:max-h-[92dvh] w-full max-w-2xl animate-dialog flex-col overflow-hidden rounded-xl bg-surface shadow-xl outline-none"
       >
+        {/* The height cap is in dvh where there is one: on a phone, 92vh is
+            92% of the screen with the browser's toolbars hidden, so with
+            them showing the centred modal overflowed both ends and lost its
+            footer (the listing link) off the bottom. */}
         {/* Top bar: previous/next and close, outside the scrolling content
             so they never scroll out of reach (the same reason price, stock
             and the outbound link live in the pinned footer: on a phone,
