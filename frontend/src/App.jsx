@@ -18,6 +18,7 @@ import CardModal from './components/CardModal'
 import CalculatorBar, { CalculatorPanel } from './components/CalculatorBar'
 import MoversView, { DEFAULT_MIN_PRICE } from './components/MoversView'
 import SavedListsView from './components/SavedListsView'
+import PdfToast from './components/PdfToast'
 import Pagination from './components/Pagination'
 import Footer from './components/Footer'
 import Icon from './components/icons'
@@ -168,6 +169,13 @@ function App() {
   const closeCalc = useCallback(() => setCalcOpen(false), [])
   const openCalc = useCallback(() => setCalcOpen(true), [])
   const calcButtonRef = useRef(null)
+
+  // A saved list's PDF export (see PdfToast) and the note it leaves on that
+  // list's sheet ({ listId, text }), here so they outlive a view switch.
+  const [pdfJob, setPdfJob] = useState(null)
+  const [pdfNote, setPdfNote] = useState(null)
+  const clearPdfJob = useCallback((id) => setPdfJob((job) => (job?.id === id ? null : job)), [])
+  const pdf = useMemo(() => ({ job: pdfJob, setJob: setPdfJob, note: pdfNote, setNote: setPdfNote }), [pdfJob, pdfNote])
 
   // Saved lists: stored by the hook; which one the view has open lives here
   // so the price list panel can open straight onto a list it just saved.
@@ -631,6 +639,8 @@ function App() {
             cardsById={cardsById}
             catalogStatus={status}
             onRetryCatalog={retryCatalog}
+            catalogGeneratedAt={meta?.generatedAt}
+            pdf={pdf}
             currency={currency}
             rates={rates}
             activeId={activeListId}
@@ -671,6 +681,7 @@ function App() {
         onCalcChange={calc.setQtyFor}
       />
 
+      <PdfToast job={pdfJob} raised={calcBarVisible} onClear={clearPdfJob} />
       <CalculatorBar
         calc={calc}
         currency={currency}

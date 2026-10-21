@@ -69,6 +69,9 @@ const RARITY_DEFAULT = ['#e2e8f0', '#1e293b']
 
 const IMAGE_TIMEOUT_MS = 20_000
 const IMAGE_CONCURRENCY = 6
+// How much of the progress the art downloads account for; drawing and
+// encoding the pages is the rest.
+const ART_SHARE = 0.9
 
 function loadImage(src) {
   return new Promise((resolve) => {
@@ -181,7 +184,7 @@ function drawRuns(ctx, runs, cx, y) {
 
 // --- pages -------------------------------------------------------------------
 
-function drawCard(ctx, row, img, box, { currency, rates, pricesReady, font }) {
+function drawCard(ctx, row, img, box, { prices, currency, rates, pricesReady, font }) {
   const artH = box.h - px(CAPTION_H)
   const artW = Math.min(box.w, Math.round((artH * 63) / 88))
   const artX = box.x + (box.w - artW) / 2
@@ -234,10 +237,28 @@ function drawCard(ctx, row, img, box, { currency, rates, pricesReady, font }) {
   if (meta.length) drawRuns(ctx, meta, cx, y)
   y += pt(16)
 
-  // The saved price leads; a card saved without one shows today's.
-  const unit = row.price ?? (pricesReady ? row.now : null)
+  // No prices: just how many of the card the list holds.
+  if (prices === 'none') {
+    drawRuns(ctx, [{ text: `${row.qty} ${row.qty === 1 ? 'copy' : 'copies'}`, font: font(700, 12), color: INK.fg }], cx, y)
+    return
+  }
+
+  // Current prices: today's alone, so a list passed on doesn't show what it
+  // was worth when saved as if it were now. Saved prices: the saved price
+  // leads, today's noted after it; a card saved without one shows today's,
+  // marked as such (it isn't in the saved total).
+  const current = prices === 'now'
+  const unit = current ? row.now : (row.price ?? (pricesReady ? row.now : null))
   const converted = currency !== 'JPY' && Boolean(rates)
+  if (current && row.now == null) {
+    const text = row.card ? 'No price today' : 'No longer listed'
+    drawRuns(ctx, [{ text, font: font(700, 11), color: INK.warning }], cx, y)
+    return
+  }
   const price = [{ text: formatPrice(unit, currency, rates), font: font(700, 14), color: INK.accent }]
+  if (!current && row.price == null && unit != null) {
+    price.push({ text: ' (today)', font: font(600, 9), color: INK.subtle })
+  }
   if (row.qty > 1) price.push({ text: `  × ${row.qty}`, font: font(600, 10), color: INK.muted })
   drawRuns(ctx, price, cx, y)
   y += pt(12)
@@ -250,7 +271,7 @@ function drawCard(ctx, row, img, box, { currency, rates, pricesReady, font }) {
     if (notes.length) notes.push({ text: ' · ', font: font(400, 8), color: INK.subtle })
     notes.push({ text: formatPrice(unit * row.qty, 'JPY', null), font: font(400, 8), color: INK.subtle })
   }
-  if (pricesReady && row.price != null) {
+  if (!current && pricesReady && row.price != null) {
     const sep = () => notes.length && notes.push({ text: ' · ', font: font(400, 8), color: INK.subtle })
     if (!row.card) {
       sep()
@@ -271,7 +292,7 @@ function drawCard(ctx, row, img, box, { currency, rates, pricesReady, font }) {
 }
 
 function drawPage(ctx, rows, art, page, pageCount, info) {
-  const { list, totals, currency, rates, font, logo } = info
+  const { list, totals, prices, pricesAt, currency, rates, font, logo } = info
   const W = ctx.canvas.width
   const H = ctx.canvas.height
   const left = px(MARGIN)
@@ -280,13 +301,21 @@ function drawPage(ctx, rows, art, page, pageCount, info) {
   ctx.fillRect(0, 0, W, H)
   ctx.textBaseline = 'middle'
 
-  // Header: list name and its total, then counts, the save date and where
-  // the prices came from.
+  // Header: list name and its total (or, with no prices, its copies), then
+  // counts, which prices these are (as saved, or as of today) and where
+  // they came from.
+  const current = prices === 'now'
+  const priced = prices !== 'none'
   const titleY = px(MARGIN) + pt(9)
   ctx.font = font(700, 13)
   ctx.textAlign = 'right'
   ctx.fillStyle = INK.accent
-  const total = `Total ${formatPrice(totals.savedJpy, currency, rates)}`
+  const cards = rows.length
+  const cardsText = `${cards} ${cards === 1 ? 'card' : 'cards'}`
+  const copiesText = `${totals.copies} ${totals.copies === 1 ? 'copy' : 'copies'}`
+  const total = priced
+    ? `Total ${formatPrice(current ? totals.nowJpy : totals.savedJpy, currency, rates)}`
+    : `${cardsText} · ${copiesText}`
   ctx.fillText(total, right, titleY)
   const totalW = ctx.measureText(total).width
   ctx.textAlign = 'left'
@@ -296,13 +325,24 @@ function drawPage(ctx, rows, art, page, pageCount, info) {
   ctx.fillText(title, left, titleY)
   ctx.font = font(400, 8.5)
   ctx.fillStyle = INK.muted
-  const cards = rows.length
   const converted = currency !== 'JPY' && Boolean(rates)
-  ctx.fillText(
-    `${cards} ${cards === 1 ? 'card' : 'cards'} · ${totals.copies} ${totals.copies === 1 ? 'copy' : 'copies'} · saved ${formatDate(Math.floor(list.createdAt / 60000), { year: true })} · prices from yuyu-tei.jp${converted ? ', conversions approximate' : ''}`,
-    left,
-    titleY + pt(15)
-  )
+  const savedOn = formatDate(Math.floor(list.createdAt / 60000), { year: true })
+  // "Today" is the catalog's date, not the clock's: a tab left open, or a
+  // scrape running behind, would otherwise date old prices as now.
+  const asOf = current ? `prices as of ${formatDate(pricesAt, { year: true })}` : `prices as saved ${savedOn}`
+  const conversions = converted ? ', conversions approximate' : ''
+  // Unlisted (or unpriced) cards are left out of today's total; say so.
+  const unpriced = current ? rows.filter((row) => row.now == null).length : 0
+  const metaLine = (source) => {
+    if (!priced) return `saved ${savedOn}`
+    const parts = [cardsText, copiesText, `${asOf}${source}${conversions}`]
+    if (unpriced) parts.push(`${unpriced} not priced today`)
+    return parts.join(' · ')
+  }
+  // The source goes if the line would overrun (the footer names the site).
+  let metaText = metaLine(' from yuyu-tei.jp')
+  if (ctx.measureText(metaText).width > right - left) metaText = metaLine('')
+  ctx.fillText(metaText, left, titleY + pt(15))
   const ruleY = px(MARGIN + HEADER_H) - px(2)
   ctx.fillStyle = INK.line
   ctx.fillRect(left, ruleY, right - left, Math.max(1, px(0.3)))
@@ -431,13 +471,20 @@ function buildPdf(pages, title) {
 
 /**
  * Builds the PDF for one saved list. `rows` are the sheet's rows (saved
- * item + `card`, `now`), `totals` its sheetTotals(). `onProgress(done,
- * total)` follows the art downloads, the slow part. Resolves to
+ * item + `card`, `now`), `totals` its sheetTotals(). `prices` is 'now'
+ * (today's prices and total, which need the catalog loaded), 'saved' (the
+ * prices the list was saved with) or 'none' (cards and copies only);
+ * `pricesAt` is the minute today's prices are from (the catalog's).
+ * `onProgress(fraction)` reports 0-1: the art downloads, the slow part,
+ * take it to ART_SHARE, drawing the pages the rest. Resolves to
  * { blob, missing } -- missing counts cards whose art couldn't be loaded
  * (they print with a blank frame).
  */
-export async function buildListPdf({ list, rows, totals, currency, rates, pricesReady, onProgress }) {
-  const [art, logo] = await Promise.all([loadAllArt(rows, onProgress), loadImage(LOGO_URL)])
+export async function buildListPdf({ list, rows, totals, prices, pricesAt, currency, rates, pricesReady, onProgress }) {
+  const [art, logo] = await Promise.all([
+    loadAllArt(rows, (done, total) => onProgress?.((done / total) * ART_SHARE)),
+    loadImage(LOGO_URL),
+  ])
   await document.fonts?.ready
   const family = getComputedStyle(document.body).fontFamily || 'sans-serif'
   const mono = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
@@ -448,11 +495,22 @@ export async function buildListPdf({ list, rows, totals, currency, rates, prices
   canvas.height = px(PAGE_H_MM)
   const ctx = canvas.getContext('2d')
   const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE))
-  const info = { list, totals, currency, rates, pricesReady, font, logo }
+  const info = {
+    list,
+    totals,
+    prices,
+    pricesAt: pricesAt ?? Math.floor(Date.now() / 60000),
+    currency,
+    rates,
+    pricesReady,
+    font,
+    logo,
+  }
   const pages = []
   for (let page = 0; page < pageCount; page++) {
     drawPage(ctx, rows, art, page, pageCount, info)
     pages.push({ jpeg: await canvasToJpeg(canvas), width: canvas.width, height: canvas.height })
+    onProgress?.(ART_SHARE + ((page + 1) / pageCount) * (1 - ART_SHARE))
   }
   return { blob: buildPdf(pages, list.name), missing: art.filter((img) => !img).length }
 }
