@@ -327,9 +327,13 @@ function drawPage(ctx, rows, art, page, pageCount, info) {
   ctx.fillStyle = INK.muted
   const converted = currency !== 'JPY' && Boolean(rates)
   const savedOn = formatDate(Math.floor(list.createdAt / 60000), { year: true })
+  // A refreshed list's prices are from its last refresh, not its save.
+  const refreshed = list.pricedAt - list.createdAt > 60_000
+  const pricedOn = formatDate(Math.floor(list.pricedAt / 60000), { year: true })
+  const savedPrices = refreshed ? `prices as refreshed ${pricedOn}` : `prices as saved ${savedOn}`
   // "Today" is the catalog's date, not the clock's: a tab left open, or a
   // scrape running behind, would otherwise date old prices as now.
-  const asOf = current ? `prices as of ${formatDate(pricesAt, { year: true })}` : `prices as saved ${savedOn}`
+  const asOf = current ? `prices as of ${formatDate(pricesAt, { year: true })}` : savedPrices
   const conversions = converted ? ', conversions approximate' : ''
   // Unlisted (or unpriced) cards are left out of today's total; say so.
   const unpriced = current ? rows.filter((row) => row.now == null).length : 0

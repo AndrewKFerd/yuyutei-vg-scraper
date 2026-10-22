@@ -3,9 +3,10 @@ import { MAX_ITEMS, clampQty, numOrNull, strOrNull } from './useCalculator'
 
 // Saved lists: named copies of the price list (the calculator), put aside in
 // localStorage to compare against today's prices later or load back. Each
-// item is a snapshot from save time -- the price it had then, and enough of
-// the card to show it even once it's gone from the catalog. Nothing here
-// reads the catalog; the sheet joins current prices on by id.
+// item is a snapshot from save time (or the last refresh) -- the price it
+// had then, and enough of the card to show it even once it's gone from the
+// catalog. Only `refresh` reads the catalog, and is handed it; otherwise the
+// sheet joins current prices on by id.
 
 export const SAVED_LISTS_KEY = 'yuyutei:saved-lists'
 export const MAX_LISTS = 50
@@ -28,6 +29,15 @@ export function saveResultText({ name, error }) {
   if (error === 'limit') return `You have ${MAX_LISTS} saved lists — delete one to save another.`
   if (error) return `Saved “${name}” for this tab only — ${error === 'full' ? 'browser storage is full' : 'this browser blocks site storage'}.`
   return `Saved “${name}”.`
+}
+
+/** What a refresh() result did, for the sheet's Undo bar and the screen reader. */
+export function refreshResultText({ names, prices, unlisted }) {
+  const parts = []
+  if (names) parts.push(`${names.toLocaleString()} ${names === 1 ? 'name' : 'names'}`)
+  if (prices) parts.push(`${prices.toLocaleString()} ${prices === 1 ? 'price' : 'prices'}`)
+  const kept = unlisted ? ` ${unlisted.toLocaleString()} no longer listed, so kept as saved.` : ''
+  return parts.length ? `Updated ${parts.join(' and ')} to today’s.${kept}` : `Already matches today’s names and prices.${kept}`
 }
 
 const cleanName = (v) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, MAX_NAME_LENGTH) : '')
@@ -79,6 +89,8 @@ function parseStored(raw) {
         name: cleanName(entry.name) || 'Untitled list',
         createdAt,
         updatedAt: numOrNull(entry.updatedAt) ?? createdAt,
+        // Lists from before refreshing existed were priced when saved.
+        pricedAt: numOrNull(entry.pricedAt) ?? createdAt,
         items,
       })
       if (lists.length >= MAX_LISTS) break
@@ -121,10 +133,14 @@ export function defaultListName(lists, now = new Date()) {
   for (let n = 2; ; n++) if (!taken.has(`${base} (${n})`)) return `${base} (${n})`
 }
 
+// The fields of a saved item a refresh can bring up to date.
+const NAME_FIELDS = ['nameEn', 'nameJp', 'setCode', 'rarity']
+
 /**
- * Lists are { id, name, createdAt, updatedAt, items } (times in ms), oldest
- * first; items are { id, qty, price, nameEn, nameJp, setCode, rarity } with
- * `price` the JPY price when saved. Changes are written to storage as they
+ * Lists are { id, name, createdAt, updatedAt, pricedAt, items } (times in
+ * ms), oldest first, with `pricedAt` when the items' snapshot was taken (the
+ * save, or the last refresh); items are { id, qty, price, nameEn, nameJp,
+ * setCode, rarity } with `price` the JPY price then. Changes are written to storage as they
  * happen (not from an effect) so `save` can tell its caller whether the list
  * actually stuck.
  */
@@ -132,7 +148,8 @@ export function useSavedLists() {
   const [lists, setLists] = useState(readStored)
   // null, or why the last write failed (a STORAGE_NOTES key).
   const [storageError, setStorageError] = useState(null)
-  const [undoInfo, setUndoInfo] = useState(null) // { listId, itemId, items, label }
+  // { listId, itemId (null for a refresh), restore (the list fields it puts back), label }
+  const [undoInfo, setUndoInfo] = useState(null)
   const listsRef = useRef(lists)
   const undoRef = useRef(null)
   const timerRef = useRef(null)
@@ -191,6 +208,7 @@ export function useSavedLists() {
         name: cleanName(name) || defaultListName(prev),
         createdAt: now,
         updatedAt: now,
+        pricedAt: now,
         items: lines.slice(0, MAX_ITEMS).map(itemOf),
       }
       return { id: list.id, name: list.name, error: commit([...prev, list]) }
@@ -234,16 +252,56 @@ export function useSavedLists() {
       updateList(listId, (l) => ({ ...l, items: l.items.filter((item) => item.id !== itemId) }), {
         listId,
         itemId,
-        items: list.items,
+        restore: { items: list.items },
         label: `Removed ${itemName(gone)}`,
       })
     },
     [updateList]
   )
 
+  /**
+   * Re-takes each item's names and price from `cardsById` (today's catalog),
+   * as if the list were saved again now, keeping quantities and order. Cards
+   * the catalog no longer has keep their snapshot. Returns { names, prices,
+   * unlisted } counts of items changed / left alone; nothing is written (or
+   * offered to undo) if no item changed.
+   */
+  const refresh = useCallback(
+    (listId, cardsById) => {
+      const list = listsRef.current.find((l) => l.id === listId)
+      if (!list) return null
+      let names = 0
+      let prices = 0
+      let unlisted = 0
+      const items = list.items.map((item) => {
+        const card = cardsById.get(item.id)
+        if (!card) {
+          unlisted++
+          return item
+        }
+        const next = itemOf({ ...card, qty: item.qty })
+        const named = NAME_FIELDS.some((key) => next[key] !== item[key])
+        const priced = next.price !== item.price
+        if (named) names++
+        if (priced) prices++
+        return named || priced ? next : item
+      })
+      if (names || prices) {
+        updateList(listId, (l) => ({ ...l, items, pricedAt: Date.now() }), {
+          listId,
+          itemId: null,
+          restore: { items: list.items, pricedAt: list.pricedAt },
+          label: refreshResultText({ names, prices, unlisted }),
+        })
+      }
+      return { names, prices, unlisted }
+    },
+    [updateList]
+  )
+
   const undo = useCallback(() => {
     const info = undoRef.current
-    if (info) updateList(info.listId, (list) => ({ ...list, items: info.items }))
+    if (info) updateList(info.listId, (list) => ({ ...list, ...info.restore }))
   }, [updateList])
 
   // Another tab changed the lists. Its write succeeded, so storage and this
@@ -264,5 +322,5 @@ export function useSavedLists() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
-  return { lists, storageError, save, rename, remove, setQty, removeItem, undo, undoInfo }
+  return { lists, storageError, save, rename, remove, setQty, removeItem, refresh, undo, undoInfo }
 }

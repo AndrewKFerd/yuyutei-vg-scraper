@@ -8,7 +8,7 @@ import { Button, IconButton } from './controls'
 import { formatPrice } from '../currency'
 import { derivedDetailUrl, derivedImageUrl } from '../catalogFormat'
 import { formatDate, isoToMinute, timeAgo } from '../history'
-import { STORAGE_NOTES, defaultListName, itemName, saveResultText } from '../useSavedLists'
+import { STORAGE_NOTES, defaultListName, itemName, refreshResultText, saveResultText } from '../useSavedLists'
 import { focusSoon } from '../useDialogFocus'
 import { CONTAINER } from '../ui'
 
@@ -19,7 +19,9 @@ import { CONTAINER } from '../ui'
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 const toMinute = (ms) => Math.floor(ms / 60000)
 const tabId = (listId) => `sheet-tab-${listId}`
-const SINCE_SAVED = 'the time since this list was saved'
+const SINCE_SAVED = 'the time since these prices were saved'
+// How long "Already matches today's…" stays under the header.
+const NOTICE_MS = 5000
 
 // Lettered A, B, C... above the headers, like a spreadsheet. The row-number
 // gutter and the remove-button column get no letter. Only the qty and
@@ -30,7 +32,7 @@ const COLUMNS = [
   { key: 'number', label: 'Number' },
   { key: 'rarity', label: 'Rarity' },
   { key: 'qty', label: 'Qty', right: true },
-  { key: 'price', label: 'Unit price', right: true, title: 'Price when the list was saved' },
+  { key: 'price', label: 'Unit price', right: true, title: 'Price when the list was saved or last refreshed' },
   { key: 'subtotal', label: 'Subtotal', right: true, title: 'Qty × unit price' },
   { key: 'now', label: 'Price now', right: true, title: 'yuyu-tei’s price in the loaded catalog' },
   { key: 'nowSubtotal', label: 'Subtotal now', right: true, title: 'Qty × price now' },
@@ -245,7 +247,7 @@ function ConfirmBar({ text, confirmLabel, danger = false, onConfirm, onCancel })
 // saying why. The menu is `fixed`, placed from the button's box (and
 // flipped above it when there's no room below), as the sheet clips its
 // overflow.
-function PdfMenu({ buttonRef, disabled, busy, savedOn, catalogStatus, onChoose }) {
+function PdfMenu({ buttonRef, disabled, busy, pricedOn, refreshed, catalogStatus, onChoose }) {
   // null when closed, else which item takes focus on opening.
   const [openAt, setOpenAt] = useState(null)
   const menuRef = useRef(null)
@@ -266,7 +268,7 @@ function PdfMenu({ buttonRef, disabled, busy, savedOn, catalogStatus, onChoose }
     {
       key: 'saved',
       label: 'Prices when saved',
-      hint: `As saved on ${formatDate(savedOn, { year: true })}${pricesReady ? ', with today’s change' : ''}`,
+      hint: `As ${refreshed ? 'refreshed' : 'saved'} on ${formatDate(pricedOn, { year: true })}${pricesReady ? ', with today’s change' : ''}`,
     },
     { key: 'none', label: 'No prices', hint: 'Just the cards and how many of each' },
   ]
@@ -414,6 +416,9 @@ function Sheet({
 }) {
   // null | 'rename' | 'delete' | 'load'
   const [mode, setMode] = useState(null)
+  // Shown for a moment when a refresh found nothing to change (one that did
+  // change something gets the Undo bar instead).
+  const [notice, setNotice] = useState(null)
   const pdfNote = pdf.note?.listId === list.id ? pdf.note.text : null
   const gridRef = useRef(null)
   const panelRef = useRef(null)
@@ -421,6 +426,7 @@ function Sheet({
   const deleteRef = useRef(null)
   const loadRef = useRef(null)
   const pdfRef = useRef(null)
+  const refreshRef = useRef(null)
   const pdfBusy = pdf.job?.status === 'working'
 
   const rows = useMemo(
@@ -444,6 +450,12 @@ function Sheet({
   const catalogCards = useMemo(() => rows.map((row) => row.card).filter(Boolean), [rows])
   const empty = rows.length === 0
   const undoInfo = saved.undoInfo?.listId === list.id ? saved.undoInfo : null
+
+  useEffect(() => {
+    if (!notice) return
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS)
+    return () => clearTimeout(timer)
+  }, [notice])
 
   const closeMode = (returnTo) => {
     setMode(null)
@@ -472,13 +484,25 @@ function Sheet({
     )
   }
 
-  // Undo puts the row back but unmounts its own button: focus the restored
-  // row's remove button instead (the sheet, if it's somehow not there).
-  const undoRemove = () => {
+  // Undo of a removal puts the row back but unmounts its own button: focus
+  // the restored row's remove button instead. Undo of a refresh goes back to
+  // Refresh. The sheet, if either is somehow not there.
+  const undoChange = () => {
     const { itemId } = undoInfo
     saved.undo()
-    announce('Restored')
-    focusSoon(() => removeButtonOf(itemId)() || panelRef.current)
+    announce(itemId ? 'Restored' : 'Put back the names and prices from before')
+    focusSoon(() => (itemId ? removeButtonOf(itemId)() : refreshRef.current) || panelRef.current)
+  }
+
+  // Brings the saved names and prices up to today's catalog, as if the list
+  // were saved again now -- for when the wiki's English names land after a
+  // list was saved, or to share it at today's prices.
+  const refresh = () => {
+    const result = saved.refresh(list.id, cardsById)
+    if (!result) return
+    const text = refreshResultText(result)
+    setNotice(result.names || result.prices ? null : text)
+    announce(text)
   }
 
   // Cards the catalog no longer has keep the saved snapshot; their image
@@ -555,7 +579,9 @@ function Sheet({
   }
 
   const created = toMinute(list.createdAt)
-  const edited = list.updatedAt - list.createdAt > 60_000 ? toMinute(list.updatedAt) : null
+  const priced = toMinute(list.pricedAt)
+  const refreshed = list.pricedAt - list.createdAt > 60_000 ? priced : null
+  const edited = list.updatedAt - Math.max(list.createdAt, list.pricedAt) > 60_000 ? toMinute(list.updatedAt) : null
 
   return (
     <div
@@ -589,20 +615,39 @@ function Sheet({
             <p className="text-xs text-fg-muted">
               {plural(rows.length, 'card', 'cards')} · {plural(totals.copies, 'copy', 'copies')} · saved{' '}
               {formatDate(created, { year: true })}
+              {refreshed !== null && ` · refreshed ${timeAgo(refreshed)}`}
               {edited !== null && ` · edited ${timeAgo(edited)}`}
             </p>
           </div>
         )}
         {/* Groups, so a narrow screen wraps between them, not mid-group. */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <Button
-            ref={loadRef}
-            size="sm"
-            onClick={() => (calc.items.length > 0 ? setMode('load') : load())}
-            disabled={empty}
-          >
-            Load into price list
-          </Button>
+          <span className="flex items-center gap-1.5">
+            <Button
+              ref={loadRef}
+              size="sm"
+              onClick={() => (calc.items.length > 0 ? setMode('load') : load())}
+              disabled={empty}
+            >
+              Load into price list
+            </Button>
+            <Button
+              ref={refreshRef}
+              size="sm"
+              onClick={refresh}
+              disabled={empty || !pricesReady}
+              title={
+                pricesReady
+                  ? 'Update the names and prices to today’s, as if saving the list again'
+                  : catalogStatus === 'error'
+                    ? 'Today’s catalog couldn’t be loaded'
+                    : 'Loading today’s catalog…'
+              }
+            >
+              <Icon name="refresh" className="h-3.5 w-3.5" />
+              Refresh
+            </Button>
+          </span>
           <span className="flex items-center gap-1.5">
             <Button size="sm" onClick={exportCsv} disabled={empty}>
               Export CSV
@@ -611,7 +656,8 @@ function Sheet({
               buttonRef={pdfRef}
               disabled={empty}
               busy={pdfBusy}
-              savedOn={created}
+              pricedOn={priced}
+              refreshed={refreshed !== null}
               catalogStatus={catalogStatus}
               onChoose={exportPdf}
             />
@@ -651,10 +697,18 @@ function Sheet({
           <IconButton icon="close" size="sm" label="Dismiss" onClick={() => pdf.setNote(null)} />
         </div>
       )}
+      {notice && !undoInfo && (
+        <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-xs text-fg-muted sm:px-4">
+          <Icon name="check" className="h-4 w-4 shrink-0 text-positive" />
+          <span className="min-w-0 flex-1">{notice}</span>
+        </div>
+      )}
       {undoInfo && (
         <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-xs text-fg-muted sm:px-4">
-          <span className="truncate">{undoInfo.label}</span>
-          <Button variant="link" size="inline" data-sheet-undo onClick={undoRemove}>
+          {/* A removal's label is one card name, so it truncates; a refresh's
+              is a sentence the count matters in, so it wraps. */}
+          <span className={undoInfo.itemId ? 'truncate' : 'min-w-0'}>{undoInfo.label}</span>
+          <Button variant="link" size="inline" data-sheet-undo onClick={undoChange}>
             Undo
           </Button>
         </div>
@@ -984,10 +1038,10 @@ function SavedListsView({
             <SheetTabs lists={lists} activeId={active.id} onChange={onActiveChange} />
           </section>
           <p className="mt-2 text-xs text-fg-subtle">
-            Unit price and subtotal are from when the list was saved; price now and subtotal now are yuyu-tei’s
+            Unit price and subtotal are from when the list was saved (or last refreshed); price now and subtotal now are yuyu-tei’s
             current prices. Cards with no current price (no longer listed) are left out of subtotal now, and its
-            change compares only cards priced both then and now. Click a quantity to change it. Conversions
-            approximate.
+            change compares only cards priced both then and now. Refresh updates the names and prices to
+            today’s. Click a quantity to change it. Conversions approximate.
           </p>
         </>
       ) : (
