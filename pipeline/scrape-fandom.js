@@ -90,11 +90,59 @@ async function apiRequest(params, { post = false } = {}) {
   }
 }
 
+const CARD_TEMPLATE_RE = /\{\{\s*(?:DTable|CardTable)\b/;
+
+/**
+ * Puts each of the card template's own field separators at the start of a
+ * line, as most pages already have them. Some pages write the whole template
+ * on one line ("{{DTable|jpname=...|kanji=...|set1=...}}"), which the
+ * line-based reader below would otherwise skip entirely. Only pipes directly
+ * inside the card template count: those of nested templates ({{Ruby|夢|む}}),
+ * links ([[a|b]]) and an effect's language tabs
+ * (<tabber>English=...|-|Japanese=...</tabber>) stay put, and so does every
+ * other template on the page.
+ */
+function fieldsOnOwnLines(wikitext) {
+  const start = wikitext.search(CARD_TEMPLATE_RE);
+  if (start === -1) return wikitext;
+  let out = wikitext.slice(0, start);
+  let braces = 0;
+  let brackets = 0;
+  let tabber = false;
+  let lineStart = false;
+  let i = start;
+  for (; i < wikitext.length; i++) {
+    if (wikitext[i] === '<') {
+      const tag = wikitext.slice(i, i + 9).toLowerCase();
+      if (tag.startsWith('<tabber>')) tabber = true;
+      else if (tag === '</tabber>') tabber = false;
+    }
+    const pair = wikitext.slice(i, i + 2);
+    if (pair === '{{' || pair === '[[' || (pair === '}}' && braces > 0) || (pair === ']]' && brackets > 0)) {
+      if (pair === '{{') braces++;
+      else if (pair === '[[') brackets++;
+      else if (pair === '}}') braces--;
+      else brackets--;
+      out += pair;
+      i++;
+      lineStart = false;
+      if (braces === 0) break; // the card template is closed
+      continue;
+    }
+    const ch = wikitext[i];
+    if (ch === '|' && braces === 1 && brackets === 0 && !tabber && !lineStart) out += '\n';
+    out += ch;
+    if (ch === '\n') lineStart = true;
+    else if (ch !== ' ' && ch !== '\t') lineStart = false;
+  }
+  return out + wikitext.slice(i + 1);
+}
+
 /** `|name = value` fields of the page's card template (values run to the next field line). */
 function parseTemplateFields(wikitext) {
   const fields = {};
   let current = null;
-  for (const line of wikitext.split('\n')) {
+  for (const line of fieldsOnOwnLines(wikitext).split('\n')) {
     const m = line.match(/^\|\s*(\w+)\s*=(.*)$/);
     if (m) {
       current = m[1];

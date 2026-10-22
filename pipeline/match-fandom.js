@@ -10,7 +10,8 @@
  * Matching, most to least reliable:
  *  1. Card code -- each wiki page lists every Japanese printing's code
  *     ("DZ-BT17/001", "V-EB05/SSP01", "G-BT01/001", "BT01/S02", "D-PR/756"),
- *     so an exact hit is unambiguous.
+ *     so an exact hit is unambiguous. A signed printing is also tried in
+ *     the wiki's spelling ("EXS50" -> "EX50S").
  *  2. Japanese name -- for printings the wiki doesn't list (yuyu-tei's own
  *     variant codes, newer reprints), the card's base name (variant markers
  *     like "(箔押し)" stripped) against the page's kanji/kana name. Only pages
@@ -40,6 +41,13 @@ function normalizeName(name) {
 
 function setOf(code) {
   return code.split('/')[0];
+}
+
+// yuyu-tei's signed printing "DZ-BT17/EXS50" is "DZ-BT17/EX50S" on most wiki
+// pages; the signed card's name often doesn't match by name either ("千石"
+// dropped from the wiki's kanji), so the code is the only way in.
+function wikiSignedCode(code) {
+  return code.replace(/\/EXS(\d+)$/, '/EX$1S');
 }
 
 /**
@@ -83,7 +91,7 @@ function createMatcher(raw) {
     const code = setCode.trim().toUpperCase();
     // A code with no supported series prefix (e.g. "VG-...") has no wiki data.
     if (!familyOfCode(code)) return null;
-    return byCode.get(code) || matchByName(code, nameJp);
+    return byCode.get(code) || byCode.get(wikiSignedCode(code)) || matchByName(code, nameJp);
   };
 }
 

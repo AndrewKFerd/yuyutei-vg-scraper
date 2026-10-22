@@ -82,6 +82,35 @@ describe('pageToCard', () => {
     assert.ok(pageToCard(page(dTable), ['D'], ['D', 'DZ']));
     assert.equal(pageToCard(page(dTable), ['G'], ['D', 'DZ']), null);
   });
+
+  // "Mugendai Mewtype, Arale Nakamachi" (DZ-BT17/EX46) writes its whole
+  // {{DTable}} on one line, and was skipped as a page with no fields.
+  it('reads a template written on one line, leaving nested templates and links whole', () => {
+    const oneLine =
+      '{{DTable|jpname={{Ruby|夢|む}}限大 {{Ruby|仲|なか}}町|kanji=夢限大みゅーたいぷ 仲町 あられ|grade=0|power=5000' +
+      '|race=[[Mugendai Mewtype|Mewtype]]|set1=DZ-BT17/EX46 (EX) 2026 - DZ-BT17/EX46S (EX) 2026' +
+      '|flavor=We dream—after all, we\'re "Mugendai Mewtype"!}}\n[[Category:Cards]]{{Nav|set1=BT01/001}}';
+    const card = pageToCard(page(oneLine, 'Mugendai Mewtype, Arale Nakamachi'), ['DZ'], ['D', 'DZ']);
+    assert.deepEqual(card.codes, ['DZ-BT17/EX46', 'DZ-BT17/EX46S']);
+    assert.equal(card.kanji, '夢限大みゅーたいぷ 仲町 あられ');
+    assert.equal(card.power, 5000);
+    assert.equal(card.flavor, 'We dream—after all, we\'re "Mugendai Mewtype"!');
+  });
+
+  // "Blazing War Cry" puts its language tabs inline in the effect; splitting
+  // at their pipes made "|Japanese=" a field and cut the effect short.
+  it('keeps the pipes of an inline <tabber> inside its field', () => {
+    const effect = '<tabber>English=Look at seven.|-|Japanese=Look at seven.</tabber>';
+    const card = pageToCard(page(`{{DTable\n|kanji = テスト\n|effect = ${effect}\n|set1 = DZ-BT01/001\n}}`), ['DZ']);
+    assert.equal(card.rawEffect, effect);
+  });
+
+  it('reads a one-line template the same as the usual one-field-per-line layout', () => {
+    const fields = ['kanji = テスト', 'grade = 1', 'set1 = DZ-BT01/001', 'flavor = {{Ruby|夢|む}} text'];
+    const multi = pageToCard(page(`{{DTable\n|${fields.join('\n|')}\n}}`), ['DZ'], ['D', 'DZ']);
+    const single = pageToCard(page(`{{DTable|${fields.join('|')}}}`), ['DZ'], ['D', 'DZ']);
+    assert.deepEqual(single, multi);
+  });
 });
 
 describe('parseArgs', () => {
@@ -112,6 +141,7 @@ describe('createMatcher', () => {
       { title: 'Hero (G)', nameEn: 'Hero G', kanji: '英雄', codes: ['G-BT05/001'] },
       { title: 'Twin A', nameEn: 'Twin A', kanji: '双子', codes: ['V-BT03/001'] },
       { title: 'Twin B', nameEn: 'Twin B', kanji: '双子', codes: ['V-BT04/001'] },
+      { title: 'Yuno', nameEn: 'Yuno', kanji: '夢限大みゅーたいぷ ユノ', codes: ['DZ-BT17/EX50', 'DZ-BT17/EX50S'] },
     ],
   };
   const find = createMatcher(raw);
@@ -120,6 +150,11 @@ describe('createMatcher', () => {
     assert.equal(find('G-BT01/001', 'なんでも').title, 'Knight');
     assert.equal(find('bt01/002', 'なんでも').title, 'Knight');
     assert.equal(find('DZ-BT02/005', 'x').title, 'Dragon');
+  });
+
+  it("matches yuyu-tei's signed EXS code to the wiki's EX…S spelling", () => {
+    assert.equal(find('DZ-BT17/EXS50', '夢限大みゅーたいぷ 千石 ユノ(サイン入り)').title, 'Yuno');
+    assert.equal(find('DZ-BT17/EXS51', '夢限大みゅーたいぷ 千石 ユノ(サイン入り)'), null);
   });
 
   it('falls back to the Japanese name within the same series family only', () => {
