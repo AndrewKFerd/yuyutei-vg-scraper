@@ -32,8 +32,10 @@ npm test                 # node --test
 | `refresh-and-push.ps1` | the scheduled run (below) | `refresh.log` |
 
 Name/text precedence in `build-data.js`: official English first, then the wiki
-fan translation, then `translate-engine.js` (a zero-network glossary +
-romanization engine) with the scraped Japanese skill text.
+fan translation, then hand-written names for sets neither covers yet
+(`set-names.js` + `data/set-names.json`), then `translate-engine.js` (a
+zero-network glossary + romanization engine) with the scraped Japanese skill
+text.
 
 Running by hand:
 ```
@@ -129,8 +131,8 @@ per run.
 
 ## Data files
 
-Committed (slow to rebuild): `card-details-raw.json`, `fandom-raw.json`,
-`glossary.json`. Everything else in `data/` is regenerated each run and
+Committed (slow to rebuild or hand-written): `card-details-raw.json`,
+`fandom-raw.json`, `glossary.json`, `set-names.json`. Everything else in `data/` is regenerated each run and
 gitignored, including the history files (the bucket copy is their backup).
 
 ## Modules
@@ -141,6 +143,7 @@ gitignored, including the history files (the bucket copy is their backup).
 `price-history.js` (history format, `chg7d`, movers), `catalog-split.js` (the
 slim catalog and detail shards), `nation.js` (clan -> nation),
 `match-official.js` / `match-fandom.js` / `fandom-series.js` /
+`set-names.js` + `data/set-names.json` /
 `translate-engine.js` + `data/glossary.json` (name sources),
 `card-group.js` (one key per card across foil/parallel variants).
 `CF_VANGUARD_NOTES.md` records how cf-vanguard set codes map to yuyu-tei's.

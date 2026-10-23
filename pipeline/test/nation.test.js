@@ -33,6 +33,7 @@ describe('nationOf', () => {
     assert.equal(nationOf('バディファイト'), 'TC');
     assert.equal(nationOf('楽曲/Roselia'), 'TC');
     assert.equal(nationOf('Poppin’Party'), 'TC');
+    assert.equal(nationOf('ペルソナシリーズ'), 'TC');
   });
 
   it('returns every nation of a multi-nation card', () => {

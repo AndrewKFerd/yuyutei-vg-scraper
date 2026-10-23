@@ -26,6 +26,7 @@ const path = require('path');
 const { translateCardName } = require('./translate-engine');
 const { findOfficialName } = require('./match-official');
 const { findFandomCard } = require('./match-fandom');
+const { findSetName } = require('./set-names');
 const { groupKey } = require('./card-group');
 const { checkCatalogSize, allowShrinkFromEnv } = require('./catalog-gate');
 const { checkOfficialRetention, allowOfficialShrinkFromEnv } = require('./reference-gate');
@@ -181,6 +182,9 @@ function main() {
       // Usually identical to the name -- only shipped when it differs
       // (a disambiguated title), the frontend falls back to nameEn.
       wikiTitle = fandom.title !== fandom.nameEn ? fandom.title : null;
+    } else if ((nameEn = findSetName(c.setCode, c.nameJp))) {
+      // Hand-written for a set neither source covers yet (data/set-names.json).
+      translationSource = 'glossary';
     } else {
       const local = translateCardName(c.nameJp);
       nameEn = local.nameEn;

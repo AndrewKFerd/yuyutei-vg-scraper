@@ -96,6 +96,7 @@ const BY_CLAN = new Map(Object.entries({
   'Record of Ragnarok': 'TC', '終末のワルキューレ': 'TC',
   'Buddyfight': 'TC', 'バディファイト': 'TC',
   'CoroCoro': 'TC', 'コロコロ': 'TC',
+  'Persona': 'TC', 'ペルソナシリーズ': 'TC',
 }));
 
 const KNOWN_CODES = new Set(NATIONS.map((n) => n.code));
