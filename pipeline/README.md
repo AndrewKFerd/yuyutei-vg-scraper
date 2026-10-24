@@ -25,7 +25,7 @@ npm test                 # node --test
 | `scrape-cf-vanguard.js` | official English database (names, stats, skill text) for JP set codes with a verified English release | `cf-vanguard-raw.json` |
 | `scrape-card-detail.js` | per-card yuyu-tei detail page: Japanese skill text. Slow (~28k requests), resumable, always merges into the existing file | `card-details-raw.json` (committed) |
 | `scrape-fandom.js` | wiki fan names/text/flavor via the MediaWiki API (~820 requests, ~25-30 min) | `fandom-raw.json` (committed) |
-| `build-translation-memory.js` | the card modal translator's memory of official translations (see below) | `../frontend/src/translate/memory.js` (committed) |
+| `build-translation-memory.js` | the card modal translator's memory of official translations (see below) | `../frontend/src/features/card/translate/memory.js` (committed) |
 | `eval-translator.js` | scores the card modal translator against official and wiki English, lists what it can't read | |
 | `record-history.js` | appends this run to the price history; holds the run gates | `price-history.json`, `history-public.json`, `movers.json` |
 | `backfill-history.js` | one-off seeding of the history from the Sep 15-18 2026 `cards.json` snapshots in git | `price-history.json` |
@@ -57,7 +57,7 @@ node --env-file=.env backfill-history.js  # one-off; refuses if a history exists
 
 Cards with Japanese rules text and no official or wiki English get a
 **Translate** button in the card modal. The translator is local and
-rules-based (no translation service): `frontend/src/translate/`, loaded as
+rules-based (no translation service): `frontend/src/features/card/translate/`, loaded as
 its own chunk the first time someone uses it. It writes the official
 database's house style (`[AUTO](VC)[1/Turn]:`, `[COST][Counter-Blast 1]`,
 `[Power] +5000` -- `[Power]+5000` for DZ-BT08 and later DZ products, as the
@@ -144,7 +144,7 @@ there are local backups in `price-history.prev.json` and `history-backups/`
   Market Movers (id, set, rarity, names, translationSource, price, stock,
   chg7d, nation; ~6 MB raw, ~0.6 MB brotli). `imageUrl`, `detailUrl` and
   `priceDisplay` are dropped when they follow from the id/price
-  (`frontend/src/catalogFormat.js` rebuilds them). It also carries the nation
+  (`frontend/src/lib/catalogFormat.js` rebuilds them). It also carries the nation
   list (`nation.js` maps D-era nations and classic clans to nations) and the
   set filter's list, `sets`: `{ slug, code, name }` in the shop's order, with
   the official code ("D-BT08") read off the cards and yuyu-tei's set name.

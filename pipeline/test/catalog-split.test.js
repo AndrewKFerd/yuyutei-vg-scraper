@@ -82,7 +82,7 @@ describe('slimCard', () => {
 
 describe('frontend hydrateCards is the inverse of slimCard', () => {
   it('restores every card exactly (minus the heavy fields)', async () => {
-    const { hydrateCards } = await import(pathToFileURL(path.join(__dirname, '../../frontend/src/catalogFormat.js')).href);
+    const { hydrateCards } = await import(pathToFileURL(path.join(__dirname, '../../frontend/src/lib/catalogFormat.js')).href);
     const originals = [
       card(),
       card({ id: 'dzbt15/10392', imageUrl: 'https://card.yuyu-tei.jp/noimage_100_140.jpg' }),

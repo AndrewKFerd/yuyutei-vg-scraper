@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Scores the card modal's rules-text translator (frontend/src/translate)
+ * Scores the card modal's rules-text translator (frontend/src/features/card/translate)
  * against real English, and lists what it still can't read.
  *
  *  1. Held-out official pairs: one card in ten (by card key) is kept out of
@@ -24,7 +24,7 @@ const { pathToFileURL } = require('url');
 const { loadPairs } = require('./translation-pairs');
 const { buildMemory, isHeldOut } = require('./build-translation-memory');
 
-const TRANSLATE = path.join(__dirname, '..', 'frontend', 'src', 'translate', 'index.js');
+const TRANSLATE = path.join(__dirname, '..', 'frontend', 'src', 'features', 'card', 'translate', 'index.js');
 
 function tokens(text) {
   return String(text)

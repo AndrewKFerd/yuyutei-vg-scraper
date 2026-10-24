@@ -1,7 +1,7 @@
 // Apply the saved/OS theme before first paint so there's no flash of the
 // wrong theme. Loaded as a plain (blocking) <script> from index.html's
 // <head> rather than inlined, so the Content-Security-Policy in vercel.json
-// can allow scripts from 'self' only. Mirrors src/theme.js — keep them in
+// can allow scripts from 'self' only. Mirrors src/ui/theme.js — keep them in
 // sync.
 (function () {
   try {

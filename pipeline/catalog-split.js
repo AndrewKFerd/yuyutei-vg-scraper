@@ -17,7 +17,7 @@
  *
  * The slim card drops what the client can recompute: imageUrl, detailUrl and
  * priceDisplay are omitted whenever they equal their derivation from the id /
- * price (frontend/src/catalogFormat.js is the inverse and must stay in sync;
+ * price (frontend/src/lib/catalogFormat.js is the inverse and must stay in sync;
  * test/catalog-split.test.js round-trips the two). A field that differs --
  * the 223 "noimage" placeholders, a null -- is kept explicitly.
  *

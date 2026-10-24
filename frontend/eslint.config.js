@@ -30,9 +30,36 @@ export default [
       ],
     },
   },
-  // Server-side code (Vercel Functions, Vite config) runs on Node.
+  // Modules the tests and pipeline scripts import straight into Node (see
+  // test/ and pipeline/eval-translator.js): plain ESM that Node can load
+  // as-is, so relative imports keep their .js extension and nothing comes
+  // from a package (React and the like). \x2F is "/", which esquery's
+  // regex syntax can't take escaped.
   {
-    files: ['api/**/*.js', 'vite.config.js'],
+    files: [
+      'src/lib/**/*.js',
+      'src/features/card/translate/**/*.js',
+      'src/features/saved-lists/savedListsData.js',
+      'src/features/saved-lists/listTransfer.js',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration)[source.value=/^\\.\\.?\\x2F(?!.*\\.js$)/]',
+          message: 'Node loads this module directly: give relative imports their .js extension.',
+        },
+        {
+          selector: ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration)[source.value=/^[^.]/]',
+          message: 'Node loads this module directly: keep it free of package imports.',
+        },
+      ],
+    },
+  },
+  // Server-side code (Vercel Functions, Vite config) and the tests run on Node.
+  {
+    files: ['api/**/*.js', 'vite.config.js', 'test/**/*.js'],
     languageOptions: { globals: globals.node },
   },
 ]

@@ -16,7 +16,10 @@ npm install
 npm run dev     # http://localhost:5173 -- /api/* use the same handlers as production
 npm run build   # -> dist/
 npm run lint
+npm test        # node --test: test/*.test.js
 ```
+
+`src/` is grouped by what code is for: `app/` (the page shell, catalog loading, URL state), `features/<name>/` (search, card modal, movers, calculator, saved lists: each feature's components, hooks and logic together), `ui/` (shared components and class recipes), `data/` (fetching and caching the `/api/*` files) and `lib/` (pure helpers). `lib/`, `features/card/translate/` and the saved lists' `savedListsData.js` / `listTransfer.js` are also loaded straight into Node by the tests and the pipeline's translator scripts, so they import nothing from packages and keep `.js` on relative imports; `npm run lint` enforces both.
 
 Local dev needs data from one of:
 

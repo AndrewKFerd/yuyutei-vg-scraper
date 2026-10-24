@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Builds frontend/src/translate/memory.js, the rules-text translator's
+ * Builds frontend/src/features/card/translate/memory.js, the rules-text translator's
  * memory of real translations:
  *
  *  - lines: whole Japanese ability lines -> their official English, as
@@ -32,7 +32,7 @@ const { pathToFileURL } = require('url');
 const { loadPairs } = require('./translation-pairs');
 const { writeFileAtomic } = require('./fs-atomic');
 
-const TRANSLATE_DIR = path.join(__dirname, '..', 'frontend', 'src', 'translate');
+const TRANSLATE_DIR = path.join(__dirname, '..', 'frontend', 'src', 'features', 'card', 'translate');
 const OUTPUT_PATH = path.join(TRANSLATE_DIR, 'memory.js');
 
 /** One card in ten, chosen by its key, is held out for evaluation. */

@@ -2,7 +2,7 @@
 
 /**
  * Japanese ability lines paired with their English, for the rules-text
- * translator (frontend/src/translate): build-translation-memory.js learns
+ * translator (frontend/src/features/card/translate): build-translation-memory.js learns
  * from the official pairs, eval-translator.js scores against both kinds.
  *
  * Cards are joined the way build-data.js joins them: each catalog listing's
