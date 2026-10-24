@@ -21,6 +21,8 @@ import { imageUrl2x, imageUrlHd } from '../images'
 import { loadSetDetails, reloadSetDetailsIfCached } from '../details'
 import { stockInfo } from '../stock'
 import { focusSoon, useDialogFocus } from '../useDialogFocus'
+import { useRulesTranslation } from '../useRulesTranslation'
+import { translateTerm } from '../translate/terms'
 import QtyStepper from './QtyStepper'
 
 // Full-screen view of the 500x700 scan. Tap/click anywhere, press Escape or
@@ -90,7 +92,9 @@ function StatPill({ value }) {
 const SKILL_PREVIEW_CHARS = 240
 const SKILL_PREVIEW_LINES = 4
 
-function SkillBox({ text, lang }) {
+// `segments` (a machine translation): the parts the translator couldn't
+// read stay in Japanese, set apart in a muted colour.
+function SkillBox({ text, lang, segments }) {
   const [expanded, setExpanded] = useState(false)
   const long = text.length > SKILL_PREVIEW_CHARS || text.split('\n').length > SKILL_PREVIEW_LINES
   return (
@@ -98,7 +102,19 @@ function SkillBox({ text, lang }) {
       {/* The clamp sits on the inner text, not the padded box, or the
           fifth line would peek through the bottom padding. */}
       <div lang={lang} className="rounded-lg border border-highlight-line bg-highlight p-3 text-sm leading-relaxed text-fg">
-        <p className={`whitespace-pre-line ${long && !expanded ? 'line-clamp-4' : ''}`}>{text}</p>
+        <p className={`whitespace-pre-line ${long && !expanded ? 'line-clamp-4' : ''}`}>
+          {segments
+            ? segments.map((seg, i) =>
+                seg.untranslated ? (
+                  <span key={i} lang="ja" className="text-fg-muted">
+                    {seg.text}
+                  </span>
+                ) : (
+                  seg.text
+                )
+              )
+            : text}
+        </p>
       </div>
       {long && (
         <Button variant="link" size="inline" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded} className="mt-1">
@@ -112,7 +128,8 @@ function SkillBox({ text, lang }) {
 // `card` is the catalog card merged with its set's detail shard. `status` is
 // that shard's load state: the skill text only exists in the shard, so
 // "no skill text" must not be claimed until it has actually loaded.
-function SkillText({ card, status, onRetry }) {
+// `translation`: useRulesTranslation()'s state, for Japanese-only text.
+function SkillText({ card, status, onRetry, translation }) {
   if (status === 'loading') {
     return <div role="status" aria-label="Loading skill text" className="h-20 animate-pulse rounded-lg bg-surface-2" />
   }
@@ -133,10 +150,34 @@ function SkillText({ card, status, onRetry }) {
   }
 
   if (card.skillTextJp) {
+    const shown = translation.on && translation.status === 'ready' ? translation.result : null
+    const working = translation.on && translation.status === 'loading'
     return (
       <div>
-        <SkillBox key={card.skillTextJp} text={card.skillTextJp} lang="ja" />
-        <p className="mt-1.5 text-xs text-fg-subtle">Japanese only — no official English release yet.</p>
+        {shown ? (
+          // Keyed on the text so switching starts collapsed again.
+          <SkillBox key={shown.text} text={shown.text} segments={shown.segments} />
+        ) : (
+          <SkillBox key={card.skillTextJp} text={card.skillTextJp} lang="ja" />
+        )}
+        <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-fg-subtle">
+          <p>
+            {shown
+              ? 'Machine translation from the Japanese text — approximate. Untranslated parts are left in Japanese.'
+              : 'Japanese only — no official English release yet.'}
+          </p>
+          <Button variant="link" size="inline" onClick={translation.toggle} aria-pressed={translation.on} disabled={working}>
+            {working ? 'Translating…' : translation.on ? 'Show Japanese' : 'Translate'}
+          </Button>
+        </div>
+        {translation.on && translation.status === 'error' && (
+          <p role="alert" className="mt-1 text-xs text-negative">
+            Couldn&apos;t load the translator.{' '}
+            <Button variant="link" size="inline" onClick={translation.retry}>
+              Try again
+            </Button>
+          </p>
+        )}
       </div>
     )
   }
@@ -347,6 +388,7 @@ function CardModal({
   dataVersion,
   calcQty,
   onCalcChange,
+  cards,
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const closeLightbox = useCallback(() => setLightboxOpen(false), [])
@@ -452,6 +494,10 @@ function CardModal({
       document.body.style.overflow = previousOverflow
     }
   }, [card, onClose, onPrev, onNext])
+
+  // Machine translation of Japanese-only rules text, which needs the shard.
+  const shardEntry = card && detailState.slug === setSlug && detailState.status === 'ready' ? detailState.cards[card.id] : null
+  const translation = useRulesTranslation(shardEntry ? { ...card, ...shardEntry } : null, cards)
 
   if (!card) return null
 
@@ -560,8 +606,10 @@ function CardModal({
               )}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <span className="font-mono text-xs text-fg-muted">{card.setCode}</span>
-                <StatPill value={full.kind} />
-                <StatPill value={full.clan} />
+                {/* Japanese labels from the detail scrape; looked up in
+                    English while translation is on. */}
+                <StatPill value={translation.on ? translateTerm(full.kind) : full.kind} />
+                <StatPill value={translation.on ? translateTerm(full.clan) : full.clan} />
                 <StatPill value={full.grade != null ? `Grade ${full.grade}` : null} />
                 <StatPill value={full.power != null ? `Power ${full.power}` : null} />
                 <StatPill value={full.shield != null ? `Shield ${full.shield}` : null} />
@@ -570,7 +618,7 @@ function CardModal({
 
             <section className="flex flex-col gap-1.5">
               <h3 className={SECTION_HEADING}>Skill</h3>
-              <SkillText card={full} status={detailStatus} onRetry={retryDetails} />
+              <SkillText card={full} status={detailStatus} onRetry={retryDetails} translation={translation} />
             </section>
 
             {full.flavorEn ? (

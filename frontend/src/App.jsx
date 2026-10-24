@@ -679,6 +679,7 @@ function App() {
         dataVersion={dataVersion}
         calcQty={selectedCard ? calc.qtyById.get(selectedCard.id) || 0 : 0}
         onCalcChange={calc.setQtyFor}
+        cards={cards}
       />
 
       <PdfToast job={pdfJob} raised={calcBarVisible} onClear={clearPdfJob} />

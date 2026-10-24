@@ -121,4 +121,4 @@ function nationOf(clan) {
   return codes.length === 1 ? codes[0] : codes;
 }
 
-module.exports = { NATIONS, KNOWN_CODES, nationOf };
+module.exports = { NATIONS, KNOWN_CODES, BY_CLAN, nationOf };

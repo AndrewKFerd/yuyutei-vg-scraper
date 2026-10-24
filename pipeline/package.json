@@ -11,7 +11,9 @@
     "upload": "node --env-file=.env upload-cards.js",
     "history:backfill": "node --env-file=.env backfill-history.js",
     "history:record": "node --env-file=.env record-history.js",
-    "test": "node --test"
+    "test": "node --test",
+    "translator:memory": "node build-translation-memory.js",
+    "translator:eval": "node eval-translator.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1135.0",
