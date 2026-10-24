@@ -5,10 +5,8 @@
  *
  * Corpus-driven glossary gap report for the offline translation engine.
  *
- * 1. Loads whatever raw card data is available: pipeline/data/catalog-raw.json
- *    if present (produced by the parallel scraping effort), otherwise falls
- *    back to backend/data/cards-dzbt16.json (247 real sample card names
- *    already in this repo). Either way, extracts every `nameJp` string.
+ * 1. Loads pipeline/data/catalog-raw.json (scrape-catalog.js's output) and
+ *    extracts every `nameJp` string.
  * 2. Runs each name through translateCardNameDetailed() and reports what % of
  *    "meaningful" Japanese characters (kanji/kana, excluding anything already
  *    consumed by a fixedPhrases match, and excluding pure ASCII/punctuation)
@@ -26,15 +24,13 @@ const path = require('path');
 const { translateCardNameDetailed, _internals } = require('./translate-engine');
 
 const CATALOG_RAW_PATH = path.join(__dirname, 'data', 'catalog-raw.json');
-const FALLBACK_SAMPLE_PATH = path.join(__dirname, '..', 'backend', 'data', 'cards-dzbt16.json');
 const GLOSSARY_PATH = path.join(__dirname, 'data', 'glossary.json');
 
 function loadCardNames() {
-  let sourcePath = CATALOG_RAW_PATH;
-  let usedFallback = false;
+  const sourcePath = CATALOG_RAW_PATH;
   if (!fs.existsSync(sourcePath)) {
-    sourcePath = FALLBACK_SAMPLE_PATH;
-    usedFallback = true;
+    console.error(`${sourcePath} not found -- run scrape-catalog.js first.`);
+    process.exit(1);
   }
 
   const raw = fs.readFileSync(sourcePath, 'utf8');
@@ -58,7 +54,7 @@ function loadCardNames() {
   }
   walk(data);
 
-  return { names, sourcePath, usedFallback };
+  return { names, sourcePath };
 }
 
 function analyze(names) {
@@ -134,8 +130,8 @@ function printReport(label, result, topN) {
 }
 
 function main() {
-  const { names, sourcePath, usedFallback } = loadCardNames();
-  console.log(`Loaded ${names.length} card names from ${sourcePath}${usedFallback ? ' (fallback sample -- catalog-raw.json not found yet)' : ''}`);
+  const { names, sourcePath } = loadCardNames();
+  console.log(`Loaded ${names.length} card names from ${sourcePath}`);
 
   const before = analyze(names);
   printReport('BEFORE glossary additions', before, 50);

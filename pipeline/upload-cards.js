@@ -4,7 +4,7 @@
  * Uploads the built pipeline/data files to a private Supabase Storage
  * bucket (via its S3-compatible endpoint). The frontend never talks to
  * Supabase directly -- it fetches through the Vercel Functions in
- * frontend/api/ (cards.js, history.js, movers.js), which proxy an
+ * frontend/api/ (catalog.js, details/[set].js, history.js, movers.js), which proxy an
  * allowlist of these same objects with their own credentials. Run this
  * after record-history.js and build-data.js.
  *
