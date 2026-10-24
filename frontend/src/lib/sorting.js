@@ -23,7 +23,7 @@ export function sortCards(cards, sort) {
       const aMissing = a.price == null
       const bMissing = b.price == null
       // Cards with no price sort last in both directions.
-      if (aMissing || bMissing) return aMissing - bMissing
+      if (aMissing || bMissing) return Number(aMissing) - Number(bMissing)
       return (a.price - b.price) * dir
     })
   }

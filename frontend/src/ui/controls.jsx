@@ -3,12 +3,21 @@ import Icon from './icons'
 import { FIELD, buttonClass } from './classes'
 
 // Shared building blocks, so the same control looks and behaves the same
-// everywhere (see ui.js for the class recipes, and the token and shape notes
-// in index.css).
+// everywhere (see classes.js for the class recipes, and the token and shape
+// notes in index.css).
+
+/**
+ * @typedef {Omit<import('react').ButtonHTMLAttributes<HTMLButtonElement>, 'type'> & {
+ *   variant?: 'primary' | 'secondary' | 'ghost' | 'link' | 'danger',
+ *   size?: 'sm' | 'md' | 'inline',
+ *   type?: 'button' | 'submit' | 'reset',
+ *   [dataAttribute: `data-${string}`]: unknown,
+ * }} ButtonProps
+ */
 
 export const Button = forwardRef(function Button(
-  { variant = 'secondary', size = 'md', className = '', type = 'button', ...rest },
-  ref
+  /** @type {ButtonProps} */ { variant = 'secondary', size = 'md', className = '', type = 'button', ...rest },
+  /** @type {import('react').ForwardedRef<HTMLButtonElement>} */ ref
 ) {
   return <button ref={ref} type={type} className={`${buttonClass(variant, size)} ${className}`} {...rest} />
 })
@@ -19,10 +28,21 @@ const ICON_BUTTON_SIZES = {
   lg: ['h-11 w-11', 'h-5 w-5'],
 }
 
+/**
+ * @typedef {Omit<import('react').ButtonHTMLAttributes<HTMLButtonElement>, 'type'> & {
+ *   icon: string,
+ *   label: string,
+ *   size?: 'sm' | 'md' | 'lg',
+ *   variant?: 'ghost' | 'outline',
+ *   type?: 'button' | 'submit' | 'reset',
+ *   [dataAttribute: `data-${string}`]: unknown,
+ * }} IconButtonProps
+ */
+
 /** Round, icon-only button; `label` is its accessible name and tooltip. */
 export const IconButton = forwardRef(function IconButton(
-  { icon, label, size = 'md', variant = 'ghost', className = '', type = 'button', ...rest },
-  ref
+  /** @type {IconButtonProps} */ { icon, label, size = 'md', variant = 'ghost', className = '', type = 'button', ...rest },
+  /** @type {import('react').ForwardedRef<HTMLButtonElement>} */ ref
 ) {
   const [box, glyph] = ICON_BUTTON_SIZES[size]
   const look =

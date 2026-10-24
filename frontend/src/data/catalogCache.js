@@ -119,6 +119,9 @@ async function fetchAndCache(url, validate, nullOn404) {
  * validated, so a failed forced fetch leaves the cached copy intact. Only a
  * genuine network/HTTP failure on the fetch ever rejects; every
  * cache-related failure degrades silently to a normal fetch instead.
+ * @param {string} url
+ * @param {{ ttlMs: number, validate?: (data: any) => boolean, nullOn404?: boolean, force?: boolean }} options
+ * @returns {Promise<{ data: any, fromCache: boolean }>}
  */
 export async function getCachedJson(url, { ttlMs, validate = () => true, nullOn404 = false, force = false }) {
   const cached = force ? null : await readFromCache(url, ttlMs, validate)

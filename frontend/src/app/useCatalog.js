@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchCatalog, refreshCatalog } from '../data/api'
 
+/** @typedef {import('../lib/types.js').CatalogPayload} CatalogPayload */
+
 /**
  * The card catalog: loaded on mount (from the cache when fresh), retried on
  * request, and re-fetched past the cache by `refresh`. `onLoaded(data)` and
@@ -13,11 +15,12 @@ import { fetchCatalog, refreshCatalog } from '../data/api'
  * isRefreshing, refreshError, dataVersion }. `dataVersion` goes up after
  * each refresh (which also drops the history/movers caches), so the Movers
  * view and card modal reload them.
+ * @param {{ onLoaded?: (data: CatalogPayload) => void, onRefreshed?: (data: CatalogPayload) => void }} handlers
  */
 export function useCatalog({ onLoaded, onRefreshed }) {
-  const [cards, setCards] = useState([])
-  const [meta, setMeta] = useState(null)
-  const [status, setStatus] = useState('loading')
+  const [cards, setCards] = useState(/** @type {import('../lib/types.js').Card[]} */ ([]))
+  const [meta, setMeta] = useState(/** @type {{ generatedAt: string, count: number } | null} */ (null))
+  const [status, setStatus] = useState(/** @type {import('../lib/types.js').CatalogStatus} */ ('loading'))
   const [errorMessage, setErrorMessage] = useState('')
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -25,12 +28,12 @@ export function useCatalog({ onLoaded, onRefreshed }) {
   // catalog stays up either way.
   const [refreshError, setRefreshError] = useState('')
   // [{code, label, group}] from the catalog; empty for one that predates it.
-  const [nations, setNations] = useState([])
+  const [nations, setNations] = useState(/** @type {CatalogPayload['nations']} */ ([]))
   // [{slug, code, name}] from the catalog; empty for one that predates it.
-  const [sets, setSets] = useState([])
+  const [sets, setSets] = useState(/** @type {CatalogPayload['sets']} */ ([]))
   const [dataVersion, setDataVersion] = useState(0)
 
-  const apply = useCallback((data) => {
+  const apply = useCallback((/** @type {CatalogPayload} */ data) => {
     setCards(data.cards)
     setNations(Array.isArray(data.nations) ? data.nations : [])
     setSets(Array.isArray(data.sets) ? data.sets : [])

@@ -180,7 +180,13 @@ function SectionJumps({ sections }) {
   )
 }
 
-const MoversSection = memo(function MoversSection({ sectionKey, tiles, currency, rates, onSelect, qtyById, onToggle }) {
+const MoversSection = memo(
+  /**
+   * @param {{ sectionKey: string, tiles: any[], currency: string, rates: object | null,
+   *   onSelect: (card: import('../../lib/types.js').Card, list: import('../../lib/types.js').Card[]) => void,
+   *   qtyById: Map<string, number>, onToggle: (card: import('../../lib/types.js').Card) => void }} props
+   */
+  function MoversSection({ sectionKey, tiles, currency, rates, onSelect, qtyById, onToggle }) {
   const [expanded, setExpanded] = useState(false)
   const { title, icon, iconClass, description } = SECTION_META[sectionKey]
   const visible = expanded ? tiles : tiles.slice(0, PREVIEW_COUNT)

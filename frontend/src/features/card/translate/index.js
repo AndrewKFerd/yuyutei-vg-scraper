@@ -83,6 +83,9 @@ function fromMemory(line, ctx, mem) {
  * 「」 becomes its English name). `names`: buildNameIndex() of the catalog.
  * Returns { text, segments, coverage }: coverage is the share of the
  * Japanese that was translated (0-1). `memory` is for the evaluation script.
+ * @param {string} textJp
+ * @param {{ card?: { setCode?: string | null, nameJp?: string | null, nameEn?: string | null },
+ *   names?: Map<string, string> | null, memory?: { lines: Record<string, string>, fragments: Record<string, string> } }} [options]
  */
 export function translateRules(textJp, { card = {}, names = null, memory: mem = memory } = {}) {
   const normalized = normalizeJp(textJp)

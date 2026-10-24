@@ -15,6 +15,12 @@ import { stockInfo } from '../lib/stock'
 // `selectedQty` (0 = not in the price list) and `onToggle` drive the round
 // add/remove button over the art. Pass a number and a stable callback, never
 // the calculator's Map: either would re-render every tile on each toggle.
+/**
+ * @param {{ card: import('../lib/types.js').Card, currency: string, rates: object | null,
+ *   onSelect: (card: import('../lib/types.js').Card) => void,
+ *   delta?: { from: number, to: number, period?: string } | null, caption?: string,
+ *   selectedQty?: number, onToggle: (card: import('../lib/types.js').Card) => void }} props
+ */
 function CardTile({ card, currency, rates, onSelect, delta, caption, selectedQty = 0, onToggle }) {
   const { inStock, label: stockLabel } = stockInfo(card.stock)
   const chip =

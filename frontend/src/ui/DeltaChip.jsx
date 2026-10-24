@@ -18,6 +18,7 @@ const STYLES = {
   },
 }
 
+/** @param {{ from: number, to: number, period?: string, suffix?: string, variant?: 'inline' | 'overlay' }} props */
 function DeltaChip({ from, to, period = '7 days', suffix, variant = 'inline' }) {
   const pct = pctChange(from, to)
   if (pct === null || pct === 0) return null

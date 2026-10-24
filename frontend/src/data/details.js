@@ -45,6 +45,8 @@ function startLoad(setSlug, { force }) {
  * Resolves to the set's `{ [cardId]: { skillTextEn, ... } }` map. Rejects on
  * a network/HTTP failure (including a 404 for a shard the pipeline hasn't
  * uploaded) so the caller can show an error with a retry.
+ * @param {string} setSlug
+ * @returns {Promise<Record<string, import('../lib/types.js').DetailEntry>>}
  */
 export function loadSetDetails(setSlug) {
   return loads.get(setSlug) || startLoad(setSlug, { force: false })
@@ -56,6 +58,8 @@ export function loadSetDetails(setSlug) {
  * existed looks like. If the shard came from the cache, fetch it once more
  * bypassing the cache and resolve to the new map; resolves null when that
  * can't tell us anything new (it already came from the network this session).
+ * @param {string} setSlug
+ * @returns {Promise<Record<string, import('../lib/types.js').DetailEntry> | null>}
  */
 export function reloadSetDetailsIfCached(setSlug) {
   if (fetchedFresh.has(setSlug)) return Promise.resolve(null)

@@ -16,6 +16,7 @@ npm install
 npm run dev     # http://localhost:5173 -- /api/* use the same handlers as production
 npm run build   # -> dist/
 npm run lint
+npm run typecheck   # TypeScript's checker over the JS (jsconfig.json); types live in JSDoc, src/lib/types.js
 npm test        # node --test: test/*.test.js
 ```
 

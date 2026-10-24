@@ -7,6 +7,9 @@
 
 import { MAX_LISTS, sanitizeLists } from './savedListsData.js'
 
+/** @typedef {import('../../lib/types.js').SavedList} SavedList */
+/** @typedef {'new' | 'update' | 'same' | 'kept' | 'full'} ImportStatus */
+
 export const TRANSFER_KIND = 'yytscrap-saved-lists'
 export const TRANSFER_VERSION = 1
 // The link's fragment: #import=z<base64url of deflated JSON>, or j<...> of
@@ -70,12 +73,20 @@ function payloadOf(lists, writeItem) {
   }
 }
 
-/** A backup file's text: the lists in full, names and all. */
+/**
+ * A backup file's text: the lists in full, names and all.
+ * @param {SavedList[]} lists
+ */
 export function backupFileText(lists) {
   return JSON.stringify(payloadOf(lists, (item) => item))
 }
 
-/** A link that opens `lists` in another browser; `origin` is the site's. */
+/**
+ * A link that opens `lists` in another browser; `origin` is the site's.
+ * @param {SavedList[]} lists
+ * @param {{ origin: string, cardsById?: Map<string, unknown> | null }} options
+ * @returns {Promise<string>}
+ */
 export async function transferLink(lists, { origin, cardsById = null }) {
   const bytes = new TextEncoder().encode(JSON.stringify(payloadOf(lists, compactItem(cardsById))))
   const deflate = typeof CompressionStream === 'function'
@@ -99,6 +110,8 @@ function itemFromWire(item) {
 /**
  * The lists in a decoded payload, checked as strictly as stored ones.
  * Returns { lists, exportedAt }; throws a TransferError.
+ * @param {any} data
+ * @returns {{ lists: SavedList[], exportedAt: number | null }}
  */
 export function readPayload(data) {
   if (!data || typeof data !== 'object' || data.kind !== TRANSFER_KIND) throw new TransferError('broken')
@@ -119,14 +132,20 @@ function parseJson(text) {
   }
 }
 
-/** A backup file's text, read. Throws a TransferError. */
+/**
+ * A backup file's text, read. Throws a TransferError.
+ * @param {string} text
+ */
 export function readBackupFile(text) {
   if (text.length > MAX_TRANSFER_BYTES) throw new TransferError('too-big')
   // Editors that save "UTF-8 with BOM" put one in front.
   return readPayload(parseJson(text.replace(/^\uFEFF/, '')))
 }
 
-/** A transfer link's location.hash, read. Throws a TransferError. */
+/**
+ * A transfer link's location.hash, read. Throws a TransferError.
+ * @param {string} hash
+ */
 export async function readTransferHash(hash) {
   if (!isTransferHash(hash)) throw new TransferError('broken')
   const encoded = hash.slice(LINK_PREFIX.length)
@@ -155,7 +174,12 @@ export async function readTransferHash(hash) {
 export const needsNames = (lists) =>
   lists.some((list) => list.items.some((item) => !item.nameEn && !item.nameJp && !item.setCode && !item.rarity))
 
-/** `lists` with nameless items given their names from `cardsById`. */
+/**
+ * `lists` with nameless items given their names from `cardsById`.
+ * @param {SavedList[]} lists
+ * @param {Map<string, import('../../lib/types.js').Card>} cardsById
+ * @returns {SavedList[]}
+ */
 export function fillNames(lists, cardsById) {
   return lists.map((list) => ({
     ...list,
@@ -194,6 +218,9 @@ function sameList(a, b) {
  * 'kept' (the copy here is newer, so it stays) or 'full' (no room left).
  * A list keeps its id wherever it goes, which is how a copy brought back
  * to the browser it came from is recognised.
+ * @param {SavedList[]} local
+ * @param {SavedList[]} incoming
+ * @returns {{ list: SavedList, status: ImportStatus }[]}
  */
 export function planImport(local, incoming) {
   const here = new Map(local.map((list) => [list.id, list]))
@@ -221,6 +248,9 @@ export function countPlan(plan) {
  * `local` with `incoming` imported: updated lists stay where they were,
  * new ones go after. Returns { lists, counts, firstId } -- firstId is the
  * first list added or updated (to open), null when nothing changed.
+ * @param {SavedList[]} local
+ * @param {SavedList[]} incoming
+ * @returns {{ lists: SavedList[], counts: Record<ImportStatus, number>, firstId: string | null }}
  */
 export function mergeLists(local, incoming) {
   const plan = planImport(local, incoming)

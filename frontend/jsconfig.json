@@ -1,0 +1,20 @@
+{
+  // Type-checks the site's JavaScript with TypeScript, from JSDoc types (see
+  // src/lib/types.js). Nothing is emitted: Vite still builds the .js/.jsx
+  // as they are. Run with `npm run typecheck`.
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    // Vite's declarations for importing CSS and other assets.
+    "types": ["vite/client"]
+  },
+  "include": ["src"]
+}

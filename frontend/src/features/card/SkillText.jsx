@@ -10,6 +10,7 @@ const SKILL_PREVIEW_LINES = 4
 
 // `segments` (a machine translation): the parts the translator couldn't
 // read stay in Japanese, set apart in a muted colour.
+/** @param {{ text: string, lang?: string, segments?: { text: string, untranslated: boolean }[] }} props */
 function SkillBox({ text, lang, segments }) {
   const [expanded, setExpanded] = useState(false)
   const long = text.length > SKILL_PREVIEW_CHARS || text.split('\n').length > SKILL_PREVIEW_LINES

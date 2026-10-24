@@ -189,6 +189,7 @@ function intoZone(jp) {
 // ---------------------------------------------------------------------------
 
 // Reminder text in parentheses, matched whole (numbers as \d+).
+/** @type {[RegExp, (...groups: string[]) => string | null][]} */
 const REMINDERS = [
   [/^相手ターンも有効$/, () => "active on opponent's turn too"],
   [/^この効果は強制$/, () => 'this effect is mandatory'],
@@ -231,6 +232,7 @@ function ordinal(n) {
 }
 
 // Whole boilerplate lines, tried before any other parsing.
+/** @type {[RegExp, (...groups: string[]) => string | null][]} */
 const FIXED_LINES = [
   [/^先駆$/, () => 'Forerunner'],
   [/^守護者$/, () => 'Sentinel'],
@@ -395,6 +397,18 @@ function statList(jp) {
 }
 
 class Sentence {
+  // Set by translateBody() and the rule tables as the sentence is read.
+  /** @type {string | undefined} The Japanese sentence's last mark: "!" for orders. */
+  end
+  /** @type {'opponent' | null | undefined} Set when the actions that follow are your opponent's. */
+  actor
+  /** @type {boolean | undefined} A condition carries on into the next clause ("…and …"). */
+  and
+  /** @type {boolean | undefined} The clause after "さらに" adds to an earlier one ("also gets"). */
+  also
+  /** @type {boolean | undefined} The last action looked at cards, so a choice is "from among them". */
+  looked
+
   constructor(ctx) {
     this.ctx = ctx
     this.leads = []
@@ -535,6 +549,7 @@ function thirdPerson(en) {
 }
 
 // Lead-ins, durations and subjects.
+/** @type {[RegExp, (this: Sentence, m: RegExpExecArray) => any][]} */
 const CLAUSES = [
   // Trigger reminders: "(トリガーで出たら、…パワー+10000!…)".
   [/^トリガーで出たら$/, function () { return this.lead('when revealed as a trigger') ?? true }],
@@ -827,6 +842,7 @@ function event(jp) {
 
 const PHASES = { ターン: 'turn', ライドフェイズ: 'ride phase', メインフェイズ: 'main phase', バトルフェイズ: 'battle phase', エンドフェイズ: 'end phase' }
 
+/** @type {[RegExp, (this: Sentence, m: RegExpExecArray) => any][]} */
 const EVENTS = [
   [/^(あなた|相手)の(ターン|ライドフェイズ|メインフェイズ|バトルフェイズ|エンドフェイズ)に(.+)$/, function (m) {
     const ev = event.call(this, m[3])
@@ -1023,6 +1039,7 @@ function condition(jp) {
 const orMore = (n, dir) => (dir ? `${numberWord(n)} or ${dir === '以上' ? 'more' : 'fewer'}` : numberWord(n))
 const gradeRange = (dir) => (dir === '以上' ? ' or greater' : dir === '以下' ? ' or less' : '')
 
+/** @type {[RegExp, (this: Sentence, m: RegExpExecArray) => any][]} */
 const CONDITIONS = [
   [/^公開した$/, () => 'you revealed a card'],
   [/^あなたのダメージゾーンの枚数が相手のダメージゾーンの枚数以上$/, () => "the number of cards in your damage zone is equal to or more than your opponent's"],
@@ -1286,6 +1303,7 @@ function circleName(jp, plural) {
     .replace(/^(中央|左|右)?(後列|前列)の/, (_, side, row) => `${plural ? '' : 'a '}${{ 中央: 'center ', 左: 'left ', 右: 'right ' }[side] || ''}${row === '後列' ? 'back row' : 'front row'} `)
 }
 
+/** @type {[RegExp, (this: Sentence, m: RegExpExecArray) => any][]} */
 const ACTIONS = [
   // "(R)にコールするか、捨てる" -> "call it to (RC) or discard it"
   [/^(.+?)か、(.+)$/, function (m) {
@@ -1448,7 +1466,7 @@ const ACTIONS = [
       from = ' from among them'
       this.looked = false
     }
-    this.obj = what.plural || (count.upTo && count.upTo > 1) ? 'them' : 'it'
+    this.obj = what.plural || (typeof count === 'object' && count.upTo > 1) ? 'them' : 'it'
     return `choose ${what.en}${from}`
   }],
   // call

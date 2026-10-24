@@ -47,11 +47,23 @@ function isValidMovers(data) {
   return data?.v === 1 && Number.isFinite(data.asOf) && typeof data.windows === 'object' && data.windows !== null
 }
 
+/**
+ * A memoized loader: resolves to the file, or null when it isn't there.
+ * @template T
+ * @typedef {((options?: { throwOnError?: boolean }) => Promise<T | null>) & { reset: () => void }} Loader
+ */
+
 // One in-flight/settled promise per file for the whole session, so opening
 // ten modals triggers one request (or one cache read), not ten. A thrown
 // error (offline, 5xx) is not memoized -- the next call retries -- while a
 // clean 404 / payload is, since retrying those can't change the answer
 // until the TTL-backed cache would anyway.
+/**
+ * @param {string} url
+ * @param {(data: any) => boolean} validate
+ * @param {string} label
+ * @returns {Loader<any>}
+ */
 function memoizedLoader(url, validate, label) {
   let promise = null
   // Resolves to the data, or null for a 404 / unexpected payload; rejects
@@ -82,13 +94,17 @@ function memoizedLoader(url, validate, label) {
   return load
 }
 
-/** Resolves to the parsed history-public.json, or null if unavailable. */
+/**
+ * Resolves to the parsed history-public.json, or null if unavailable.
+ * @type {Loader<import('../lib/types.js').History>}
+ */
 export const loadHistory = memoizedLoader(HISTORY_URL, isValidHistory, 'price history')
 
 /**
  * Resolves to the parsed movers.json, or null if unavailable. With
  * `{ throwOnError: true }`, rejects on a load failure instead (null then
  * strictly means "not published yet").
+ * @type {Loader<import('../lib/types.js').Movers>}
  */
 export const loadMovers = memoizedLoader(MOVERS_URL, isValidMovers, 'market movers')
 
@@ -108,6 +124,9 @@ export async function clearHistoryCache() {
  * The card's series, or null when the card isn't in the file -- which means
  * its price hasn't changed since tracking began (the pipeline strips
  * baseline-only cards from the public file).
+ * @param {import('../lib/types.js').History | null} history
+ * @param {string} id
+ * @returns {import('../lib/types.js').HistoryEntry[] | null}
  */
 export function getSeries(history, id) {
   const cards = history?.cards

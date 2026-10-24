@@ -18,6 +18,8 @@ export const derivedPriceDisplay = (price) =>
  * a freshly parsed response, and copying 28k objects would just be churn).
  * `=== undefined` rather than a falsy check: an explicit null in the data
  * means "this card has no such URL" and must stay null.
+ * @param {import('./types.js').Card[]} cards
+ * @returns {import('./types.js').Card[]}
  */
 export function hydrateCards(cards) {
   for (const card of cards) {

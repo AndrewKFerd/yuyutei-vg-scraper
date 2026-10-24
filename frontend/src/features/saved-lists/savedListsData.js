@@ -13,7 +13,11 @@ export const itemName = (item) => item.nameEn || item.nameJp || item.setCode || 
 
 export const cleanName = (v) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, MAX_NAME_LENGTH) : '')
 
-/** A saved item from a price-list line, a catalog card or stored data. */
+/**
+ * A saved item from a price-list line, a catalog card or stored data.
+ * @param {{ id: string, qty?: any, price?: any, nameEn?: any, nameJp?: any, setCode?: any, rarity?: any }} line
+ * @returns {import('../../lib/types.js').SavedItem}
+ */
 export function itemOf(line) {
   return {
     id: line.id,
@@ -31,6 +35,8 @@ export function itemOf(line) {
  * with other tabs and other people, so every field is re-validated rather
  * than trusted). Drops entries without an id or items array and repeated
  * list or card ids, and caps lists at MAX_LISTS and items at MAX_ITEMS.
+ * @param {unknown} entries
+ * @returns {import('../../lib/types.js').SavedList[]}
  */
 export function sanitizeLists(entries) {
   if (!Array.isArray(entries)) return []

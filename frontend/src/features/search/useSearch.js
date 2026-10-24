@@ -23,6 +23,9 @@ const filterKeyOf = (query, setSlug, rarity, sort) => JSON.stringify([query.trim
  * from `initial` (readUrlState()) -- and the results it gives over `cards`.
  * `catalogSets` is the catalog's set list; filters the loaded catalog can't
  * satisfy are dropped once `catalogReady`.
+ * @param {{ initial: ReturnType<typeof import('../../app/useUrlState').readUrlState>,
+ *   cards: import('../../lib/types.js').Card[], catalogSets: import('../../lib/types.js').CatalogPayload['sets'],
+ *   catalogReady: boolean }} options
  */
 export function useSearch({ initial, cards, catalogSets, catalogReady }) {
   const [query, setQuery] = useState(initial.query)

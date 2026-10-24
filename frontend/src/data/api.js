@@ -20,7 +20,8 @@ import { clearHistoryCache } from './history'
  * The omitted derived fields (imageUrl, detailUrl, priceDisplay) are filled
  * back in here once, so the rest of the app reads them as before.
  *
- * @returns {Promise<{generatedAt: string, count: number, cards: Array, fromCache: boolean}>}
+ * @param {{ force?: boolean }} [options]
+ * @returns {Promise<import('../lib/types.js').CatalogPayload & { fromCache: boolean }>}
  */
 export async function fetchCatalog({ force = false } = {}) {
   let data, fromCache
@@ -49,6 +50,7 @@ export async function fetchCatalog({ force = false } = {}) {
  * the fresh catalog; they reload lazily when next needed). A failure -- offline, a
  * 5xx, or an empty catalog -- rejects and leaves every cache as it was, so
  * the page can keep showing what it already has.
+ * @returns {Promise<import('../lib/types.js').CatalogPayload & { fromCache: boolean }>}
  */
 export async function refreshCatalog() {
   const result = await fetchCatalog({ force: true })
