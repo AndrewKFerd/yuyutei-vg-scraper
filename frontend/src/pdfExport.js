@@ -1,8 +1,8 @@
 import { formatPrice } from './currency'
 import { derivedImageUrl } from './catalogFormat'
-import { formatDate, formatPctMagnitude, pctChange } from './history'
+import { formatDate, formatPctMagnitude, pctChange } from './format'
 import { imageUrl2x, imageUrlHd } from './images'
-import { itemName } from './useSavedLists'
+import { itemName } from './savedListsData'
 
 // A saved list as a PDF, built in the browser: four cards to an A4 page,
 // each card's art with its price underneath. Every page is drawn on a

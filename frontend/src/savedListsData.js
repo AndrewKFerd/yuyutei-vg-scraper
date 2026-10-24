@@ -8,6 +8,9 @@ import { MAX_ITEMS, clampQty, numOrNull, strOrNull } from './limits.js'
 export const MAX_LISTS = 50
 export const MAX_NAME_LENGTH = 60
 
+/** What to call a saved item: its English name, else Japanese, else set code. */
+export const itemName = (item) => item.nameEn || item.nameJp || item.setCode || 'card'
+
 export const cleanName = (v) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, MAX_NAME_LENGTH) : '')
 
 /** A saved item from a price-list line, a catalog card or stored data. */

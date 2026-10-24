@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 // The card modal's "Translate" toggle for cards whose rules text is only in
 // Japanese. The translator (src/translate) is a separate chunk, loaded the
@@ -41,43 +41,58 @@ const nameIndexes = new WeakMap()
 /**
  * `card`: the open card merged with its detail shard. `cards`: the whole
  * catalog, for resolving card names quoted in the text.
- * Returns { offered, on, toggle, retry, status: 'idle'|'loading'|'ready'|'error', result }.
+ * Returns { offered, on, toggle, retry, status: 'idle'|'loading'|'ready'|'error',
+ * result, translateTerm }. While translation is on the engine loads for
+ * every card, not only Japanese-only ones, since the modal's kind and clan
+ * pills (Japanese for all cards) take their English from its
+ * `translateTerm`: null until it has loaded.
  */
 export function useRulesTranslation(card, cards) {
   const [on, setOn] = useState(readPreference)
   const [attempt, setAttempt] = useState(0)
-  const [state, setState] = useState({ key: null, status: 'idle', result: null })
-
-  const offered = Boolean(card?.skillTextJp && !card.skillTextEn)
-  const textJp = offered ? card.skillTextJp : null
-  const id = card?.id
-  const setCode = card?.setCode
-  const nameJp = card?.nameJp
-  const nameEn = card?.nameEn
-  const key = on && textJp ? `${id}|${attempt}|${textJp}` : null
+  // { attempt, engine }: the loaded translator, or engine null when that
+  // attempt's load failed.
+  const [loaded, setLoaded] = useState(null)
 
   useEffect(() => {
-    if (!key) return
+    if (!on) return
     let cancelled = false
     loadEngine().then(
       (engine) => {
-        if (cancelled) return
-        let names = cards ? nameIndexes.get(cards) : null
-        if (cards && !names) {
-          names = engine.buildNameIndex(cards)
-          nameIndexes.set(cards, names)
-        }
-        const result = engine.translateRules(textJp, { card: { setCode, nameJp, nameEn }, names })
-        setState({ key, status: 'ready', result })
+        if (!cancelled) setLoaded({ attempt, engine })
       },
       () => {
-        if (!cancelled) setState({ key, status: 'error', result: null })
+        if (!cancelled) setLoaded({ attempt, engine: null })
       }
     )
     return () => {
       cancelled = true
     }
-  }, [key, textJp, setCode, nameJp, nameEn, cards])
+  }, [on, attempt])
+
+  const offered = Boolean(card?.skillTextJp && !card.skillTextEn)
+  const textJp = offered ? card.skillTextJp : null
+  const setCode = card?.setCode
+  const nameJp = card?.nameJp
+  const nameEn = card?.nameEn
+  const engine = on ? loaded?.engine || null : null
+  const failed = on && loaded?.attempt === attempt && !loaded.engine
+
+  // { result } or { error } (a translator bug shouldn't take the modal down).
+  const outcome = useMemo(() => {
+    if (!engine || !textJp) return null
+    try {
+      let names = cards ? nameIndexes.get(cards) : null
+      if (cards && !names) {
+        names = engine.buildNameIndex(cards)
+        nameIndexes.set(cards, names)
+      }
+      return { result: engine.translateRules(textJp, { card: { setCode, nameJp, nameEn }, names }) }
+    } catch (error) {
+      console.warn('[translate] Couldn’t translate this card’s text.', error)
+      return { error }
+    }
+  }, [engine, textJp, setCode, nameJp, nameEn, cards])
 
   const toggle = useCallback(() => {
     setOn((was) => {
@@ -87,13 +102,13 @@ export function useRulesTranslation(card, cards) {
   }, [])
   const retry = useCallback(() => setAttempt((n) => n + 1), [])
 
-  const current = key && state.key === key
   return {
     offered,
     on,
     toggle,
     retry,
-    status: !key ? 'idle' : current ? state.status : 'loading',
-    result: current ? state.result : null,
+    status: !on || !textJp ? 'idle' : outcome?.result ? 'ready' : failed || outcome?.error ? 'error' : 'loading',
+    result: outcome?.result || null,
+    translateTerm: engine ? engine.translateTerm : null,
   }
 }

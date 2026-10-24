@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from 'react'
 import { formatPrice } from '../currency'
-import { entryAt, formatDate, formatDateTime } from '../history'
+import { formatDate, formatDateTime } from '../format'
+import { entryAt } from '../history'
 import { stockInfo } from '../stock'
 import { Segmented } from './controls'
 

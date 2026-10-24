@@ -1,4 +1,4 @@
-import { pctChange } from './history'
+import { pctChange } from './format'
 
 // The sort dropdown's options, keyed by what sortCards() below understands.
 // The 7-day sorts use each card's `chg7d` (baked into the catalog by the

@@ -6,18 +6,14 @@ import { EmptyMark } from './Logo'
 import { Button, Segmented, Select } from './controls'
 import { formatPrice } from '../currency'
 import { CONTAINER, GRID } from '../ui'
+import { formatBetween, formatDate, formatDateTime, pctChange, timeAgo } from '../format'
 import {
   MOVER_WINDOWS,
   describeObservedAt,
-  formatBetween,
-  formatDate,
-  formatDateTime,
   gapContaining,
   getSeries,
   loadHistory,
   loadMovers,
-  pctChange,
-  timeAgo,
   windowPeriod,
 } from '../history'
 

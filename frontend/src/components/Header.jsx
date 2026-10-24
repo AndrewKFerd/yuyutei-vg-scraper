@@ -3,7 +3,7 @@ import ThemeToggle from './ThemeToggle'
 import CurrencySelector from './CurrencySelector'
 import Logo from './Logo'
 import { IconButton, Segmented } from './controls'
-import { formatDateTime, isoToMinute, timeAgo } from '../history'
+import { formatDateTime, isoToMinute, timeAgo } from '../format'
 import { CONTAINER } from '../ui'
 
 // Short labels until lg: from md the switcher shares the title's row, and

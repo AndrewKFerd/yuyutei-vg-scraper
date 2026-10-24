@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MAX_ITEMS, clampQty } from './limits'
-import { MAX_LISTS, cleanName, itemOf, sanitizeLists } from './savedListsData'
+import { MAX_LISTS, cleanName, itemName, itemOf, sanitizeLists } from './savedListsData'
 import { mergeLists } from './listTransfer'
 
 // Saved lists: named copies of the price list (the calculator), put aside in
@@ -20,7 +20,6 @@ export const STORAGE_NOTES = {
   unavailable: 'This browser isn’t letting the site store data, so saved lists only last until this tab closes.',
 }
 
-export const itemName = (item) => item.nameEn || item.nameJp || item.setCode || 'card'
 /**
  * Message for a save() result: what the form shows (and stays open) for
  * `limit`, else the confirmation, flagged when it only lives in this tab.

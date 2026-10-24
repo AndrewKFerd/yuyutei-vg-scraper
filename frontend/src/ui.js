@@ -33,3 +33,7 @@ export const CONTAINER = 'mx-auto w-full max-w-screen-2xl px-4 sm:px-6'
 // The card grid, shared by search results, set sections, Movers and the
 // loading skeleton.
 export const GRID = 'grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
+
+// Small all-caps heading of a section in the card modal ("Skill", "Price
+// history").
+export const SECTION_HEADING = 'text-xs font-semibold uppercase tracking-wide text-fg-subtle'

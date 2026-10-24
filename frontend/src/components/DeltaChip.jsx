@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { formatPctMagnitude, pctChange } from '../history'
+import { formatPctMagnitude, pctChange } from '../format'
 
 // "Up/down since" chip: ▲25% (green) / ▼67% (red). Direction is carried by
 // the arrow and the aria-label as well as the color, so it never relies on

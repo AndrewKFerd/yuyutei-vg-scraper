@@ -1,78 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import RarityBadge from './RarityBadge'
 import DeltaChip from './DeltaChip'
-import PriceHistoryChart from './PriceHistoryChart'
+import Lightbox from './Lightbox'
+import PriceHistorySection from './PriceHistorySection'
+import SkillText from './SkillText'
 import Icon from './icons'
 import { Button, IconButton } from './controls'
 import { formatPrice } from '../currency'
-import {
-  describeChangeTime,
-  formatDate,
-  formatDateTime,
-  formatPctSigned,
-  getSeries,
-  isoToMinute,
-  loadHistory,
-  newerThanCatalog,
-  pctChange,
-  summarizeSeries,
-} from '../history'
+import { loadHistory } from '../history'
 import { imageUrl2x, imageUrlHd } from '../images'
 import { loadSetDetails, reloadSetDetailsIfCached } from '../details'
 import { stockInfo } from '../stock'
+import { SECTION_HEADING } from '../ui'
 import { focusSoon, useDialogFocus } from '../useDialogFocus'
 import { useRulesTranslation } from '../useRulesTranslation'
-import { translateTerm } from '../translate/terms'
 import QtyStepper from './QtyStepper'
-
-// Full-screen view of the 500x700 scan. Tap/click anywhere, press Escape or
-// activate the close button to dismiss. Sits above the card modal (z-60 vs
-// 50) and stops propagation so closing it doesn't also close the modal
-// beneath. Owns keyboard focus while open; closing returns it to the
-// "enlarge" button.
-function Lightbox({ src, alt, onClose }) {
-  const ref = useRef(null)
-  useDialogFocus(ref, { open: true })
-
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onClose()
-      }
-    }
-    // Capture phase so this runs before the modal's own Escape handler.
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-  }, [onClose])
-
-  return (
-    <div
-      ref={ref}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${alt} — full-size image`}
-      tabIndex={-1}
-      onMouseDown={(e) => {
-        e.stopPropagation()
-        onClose()
-      }}
-      className="fixed inset-0 z-[60] flex animate-fade cursor-zoom-out items-center justify-center bg-night-950/90 p-3 outline-none"
-    >
-      <img src={src} alt={alt} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" />
-      {/* Pointer users already closed it on mousedown above; onClick is
-          for keyboard activation (Enter/Space fire click, not mousedown). */}
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Close full-size image"
-        className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full bg-night-800/80 text-white hover:bg-night-700"
-      >
-        <Icon name="close" />
-      </button>
-    </div>
-  )
-}
 
 // Page title -> URL on a fixed host, so dataset content can't redirect the link elsewhere.
 function wikiUrl(title) {
@@ -86,232 +28,6 @@ function wikiUrl(title) {
 function StatPill({ value }) {
   if (value === null || value === undefined || value === '') return null
   return <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-fg-muted">{value}</span>
-}
-
-// Longer than this and the skill box starts clamped, with "Show full text".
-const SKILL_PREVIEW_CHARS = 240
-const SKILL_PREVIEW_LINES = 4
-
-// `segments` (a machine translation): the parts the translator couldn't
-// read stay in Japanese, set apart in a muted colour.
-function SkillBox({ text, lang, segments }) {
-  const [expanded, setExpanded] = useState(false)
-  const long = text.length > SKILL_PREVIEW_CHARS || text.split('\n').length > SKILL_PREVIEW_LINES
-  return (
-    <div>
-      {/* The clamp sits on the inner text, not the padded box, or the
-          fifth line would peek through the bottom padding. */}
-      <div lang={lang} className="rounded-lg border border-highlight-line bg-highlight p-3 text-sm leading-relaxed text-fg">
-        <p className={`whitespace-pre-line ${long && !expanded ? 'line-clamp-4' : ''}`}>
-          {segments
-            ? segments.map((seg, i) =>
-                seg.untranslated ? (
-                  <span key={i} lang="ja" className="text-fg-muted">
-                    {seg.text}
-                  </span>
-                ) : (
-                  seg.text
-                )
-              )
-            : text}
-        </p>
-      </div>
-      {long && (
-        <Button variant="link" size="inline" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded} className="mt-1">
-          {expanded ? 'Show less' : 'Show full text'}
-        </Button>
-      )}
-    </div>
-  )
-}
-
-// `card` is the catalog card merged with its set's detail shard. `status` is
-// that shard's load state: the skill text only exists in the shard, so
-// "no skill text" must not be claimed until it has actually loaded.
-// `translation`: useRulesTranslation()'s state, for Japanese-only text.
-function SkillText({ card, status, onRetry, translation }) {
-  if (status === 'loading') {
-    return <div role="status" aria-label="Loading skill text" className="h-20 animate-pulse rounded-lg bg-surface-2" />
-  }
-  if (status === 'error') {
-    return (
-      <p role="alert" className="rounded-lg border border-dashed border-line p-3 text-sm text-negative">
-        Couldn&apos;t load the skill text.{' '}
-        <Button variant="link" size="inline" onClick={onRetry} className="text-sm">
-          Try again
-        </Button>
-      </p>
-    )
-  }
-
-  if (card.skillTextEn) {
-    // Keyed on the text so a different card starts collapsed again.
-    return <SkillBox key={card.skillTextEn} text={card.skillTextEn} />
-  }
-
-  if (card.skillTextJp) {
-    const shown = translation.on && translation.status === 'ready' ? translation.result : null
-    const working = translation.on && translation.status === 'loading'
-    return (
-      <div>
-        {shown ? (
-          // Keyed on the text so switching starts collapsed again.
-          <SkillBox key={shown.text} text={shown.text} segments={shown.segments} />
-        ) : (
-          <SkillBox key={card.skillTextJp} text={card.skillTextJp} lang="ja" />
-        )}
-        <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-fg-subtle">
-          <p>
-            {shown
-              ? 'Machine translation from the Japanese text — approximate. Untranslated parts are left in Japanese.'
-              : 'Japanese only — no official English release yet.'}
-          </p>
-          <Button variant="link" size="inline" onClick={translation.toggle} aria-pressed={translation.on} disabled={working}>
-            {working ? 'Translating…' : translation.on ? 'Show Japanese' : 'Translate'}
-          </Button>
-        </div>
-        {translation.on && translation.status === 'error' && (
-          <p role="alert" className="mt-1 text-xs text-negative">
-            Couldn&apos;t load the translator.{' '}
-            <Button variant="link" size="inline" onClick={translation.retry}>
-              Try again
-            </Button>
-          </p>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <p className="rounded-lg border border-dashed border-line p-3 text-sm text-fg-subtle">
-      No skill text available for this card yet.
-    </p>
-  )
-}
-
-// Shown when history recorded a change after the visitor's cached catalog
-// was built, so the footer's price/stock (from that catalog) is out of date.
-function StaleCatalogNote({ latest, catalogMinute, currency, rates, onRefresh, isRefreshing, refreshError }) {
-  const [at, price, stock] = latest
-  return (
-    <div className="rounded-lg border border-highlight-line bg-highlight px-3 py-2 text-xs leading-relaxed text-fg">
-      <span className="font-semibold">Newer data:</span> {formatPrice(price, currency, rates)} ·{' '}
-      {stockInfo(stock).label} as of {formatDateTime(at)} — the price and stock shown below are from your cached
-      catalog ({formatDateTime(catalogMinute)}).{' '}
-      {onRefresh && (
-        <Button variant="link" size="inline" onClick={onRefresh} disabled={isRefreshing}>
-          {isRefreshing ? 'Refreshing…' : 'Refresh now'}
-        </Button>
-      )}
-      {onRefresh && refreshError && (
-        <span role="alert" className="mt-1 block text-negative">
-          Refresh failed ({refreshError}).
-        </span>
-      )}
-    </div>
-  )
-}
-
-const SECTION_HEADING = 'text-xs font-semibold uppercase tracking-wide text-fg-subtle'
-
-// "Price history" block. `history` is undefined while loading, null when
-// the history file isn't available (then the section just doesn't show --
-// history is an extra, never an error state), else history-public.json.
-function PriceHistorySection({
-  card,
-  history,
-  currency,
-  rates,
-  catalogGeneratedAt,
-  onRefresh,
-  isRefreshing,
-  refreshError,
-}) {
-  if (history === undefined) {
-    return <p className="animate-pulse text-xs text-fg-subtle">Loading price history…</p>
-  }
-  if (history === null) return null
-
-  const heading = <h3 className={SECTION_HEADING}>Price history</h3>
-
-  const series = getSeries(history, card.id)
-  // Cards whose only entry is the tracking baseline are stripped from the
-  // public file, so "absent" means "no change since tracking began".
-  if (!series) {
-    return (
-      <section className="flex flex-col gap-1">
-        {heading}
-        <p className="text-xs text-fg-muted">
-          Price unchanged since tracking began ({formatDate(history.trackingSince, { year: true })}).
-        </p>
-      </section>
-    )
-  }
-
-  const fmt = (p) => formatPrice(p, currency, rates)
-  const { low, high, changes, lastChange, firstSeen } = summarizeSeries(series)
-  const firstSeenLater = firstSeen > history.trackingSince
-  // Drawing needs some width: a listing first seen in the latest run is a
-  // single point in time, which reads better as text.
-  const chartable = history.lastRun - firstSeen >= 60
-  const lastPct = lastChange ? pctChange(lastChange.from, lastChange.to) : null
-  const strong = 'font-semibold text-fg'
-  const catalogMinute = isoToMinute(catalogGeneratedAt)
-  const newer = newerThanCatalog(series, card, catalogMinute)
-
-  return (
-    <section className="flex flex-col gap-2">
-      {newer && (
-        <StaleCatalogNote
-          latest={newer}
-          catalogMinute={catalogMinute}
-          currency={currency}
-          rates={rates}
-          onRefresh={onRefresh}
-          isRefreshing={isRefreshing}
-          refreshError={refreshError}
-        />
-      )}
-      {chartable ? (
-        <PriceHistoryChart
-          key={card.id}
-          series={series}
-          coverage={history.coverage}
-          lastRun={history.lastRun}
-          currency={currency}
-          rates={rates}
-        />
-      ) : (
-        heading
-      )}
-      <div className="flex flex-col gap-0.5 text-xs text-fg-muted">
-        {changes > 0 ? (
-          <p>
-            Low <span className={strong}>{fmt(low)}</span> · High <span className={strong}>{fmt(high)}</span> ·{' '}
-            {changes} {changes === 1 ? 'change' : 'changes'}
-          </p>
-        ) : (
-          <p>
-            No price changes since {firstSeenLater ? 'first seen' : 'tracking began'} (
-            {formatDate(firstSeen, { year: true })}) · <span className={strong}>{fmt(low)}</span>
-          </p>
-        )}
-        {lastChange && (
-          <p>
-            Last change{' '}
-            {lastPct !== null && (
-              <span className={`font-semibold ${lastPct > 0 ? 'text-positive' : 'text-negative'}`}>
-                {formatPctSigned(lastPct)}
-              </span>
-            )}{' '}
-            ({fmt(lastChange.from)} → {fmt(lastChange.to)}) · changed{' '}
-            {describeChangeTime(lastChange.at, history.coverage)}
-          </p>
-        )}
-        {firstSeenLater && changes > 0 && <p>First seen {formatDate(firstSeen, { year: true })}.</p>}
-      </div>
-    </section>
-  )
 }
 
 // Footer control for the price list: add, or (once added) set the quantity
@@ -501,6 +217,9 @@ function CardModal({
 
   if (!card) return null
 
+  // Japanese labels from the detail scrape, in English while translation is
+  // on (once the translator has loaded).
+  const term = (value) => (translation.on && translation.translateTerm ? translation.translateTerm(value) : value)
   const detailStatus = detailState.slug === setSlug ? detailState.status : 'loading'
   // Catalog card + its shard entry. A missing entry (a card with no heavy
   // fields at all is simply absent from its shard) merges nothing.
@@ -606,10 +325,8 @@ function CardModal({
               )}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <span className="font-mono text-xs text-fg-muted">{card.setCode}</span>
-                {/* Japanese labels from the detail scrape; looked up in
-                    English while translation is on. */}
-                <StatPill value={translation.on ? translateTerm(full.kind) : full.kind} />
-                <StatPill value={translation.on ? translateTerm(full.clan) : full.clan} />
+                <StatPill value={term(full.kind)} />
+                <StatPill value={term(full.clan)} />
                 <StatPill value={full.grade != null ? `Grade ${full.grade}` : null} />
                 <StatPill value={full.power != null ? `Power ${full.power}` : null} />
                 <StatPill value={full.shield != null ? `Shield ${full.shield}` : null} />
