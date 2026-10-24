@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatPrice } from './currency'
+import { MAX_ITEMS, clampQty, numOrNull, strOrNull } from './limits'
 
 // The price calculator's list: which cards, how many of each, and a
 // snapshot of each card's price/stock so the sum still adds up when the card
 // is missing from the loaded catalog (delisted, or the catalog is mid-load).
 
 export const STORAGE_KEY = 'yuyutei:calculator'
-export const MAX_ITEMS = 300
-export const MAX_QTY = 99
 // How long the bar offers "Undo" after a removal.
 const UNDO_MS = 8000
 
-export const clampQty = (n) => Math.min(MAX_QTY, Math.max(1, Math.round(Number(n)) || 1))
 const nameOf = (src) => src.nameEn || src.nameJp || src.setCode || 'card'
 
 function snapOf(card) {
@@ -26,9 +24,6 @@ function snapOf(card) {
     detailUrl: card.detailUrl || null,
   }
 }
-
-export const numOrNull = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
-export const strOrNull = (v) => (typeof v === 'string' && v ? v : null)
 
 // Storage is shared with other tabs and could hold anything, so every field
 // is re-validated on the way in rather than trusted.

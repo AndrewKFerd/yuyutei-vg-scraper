@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MAX_QTY } from '../useCalculator'
+import { MAX_QTY } from '../limits'
 
 const buttonClass =
   'flex h-8 w-8 items-center justify-center rounded-full border border-line-strong text-base font-semibold leading-none text-fg transition hover:border-accent hover:text-accent aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:border-line-strong aria-disabled:hover:text-fg'

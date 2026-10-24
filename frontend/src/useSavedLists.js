@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MAX_ITEMS, clampQty, numOrNull, strOrNull } from './useCalculator'
+import { MAX_ITEMS, clampQty } from './limits'
+import { MAX_LISTS, cleanName, itemOf, sanitizeLists } from './savedListsData'
+import { mergeLists } from './listTransfer'
 
 // Saved lists: named copies of the price list (the calculator), put aside in
 // localStorage to compare against today's prices later or load back. Each
@@ -9,14 +11,12 @@ import { MAX_ITEMS, clampQty, numOrNull, strOrNull } from './useCalculator'
 // sheet joins current prices on by id.
 
 export const SAVED_LISTS_KEY = 'yuyutei:saved-lists'
-export const MAX_LISTS = 50
-export const MAX_NAME_LENGTH = 60
 // How long the sheet offers "Undo" after a row is removed.
 const UNDO_MS = 8000
 
 // Why a write didn't reach storage; the change still stands in this tab.
 export const STORAGE_NOTES = {
-  full: 'Your browser’s storage is full, so recent changes to saved lists only last until this tab closes. Delete a list (export it as CSV first) to make room.',
+  full: 'Your browser’s storage is full, so recent changes to saved lists only last until this tab closes. Delete a list (back it up with Export lists first) to make room.',
   unavailable: 'This browser isn’t letting the site store data, so saved lists only last until this tab closes.',
 }
 
@@ -40,8 +40,6 @@ export function refreshResultText({ names, prices, unlisted }) {
   return parts.length ? `Updated ${parts.join(' and ')} to today’s.${kept}` : `Already matches today’s names and prices.${kept}`
 }
 
-const cleanName = (v) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, MAX_NAME_LENGTH) : '')
-
 // randomUUID needs a secure context (https / localhost); anything else gets
 // a time + random id, which is plenty for a few dozen lists in one browser.
 function newId() {
@@ -52,50 +50,10 @@ function newId() {
   }
 }
 
-function itemOf(line) {
-  return {
-    id: line.id,
-    qty: clampQty(line.qty),
-    price: numOrNull(line.price),
-    nameEn: strOrNull(line.nameEn),
-    nameJp: strOrNull(line.nameJp),
-    setCode: strOrNull(line.setCode),
-    rarity: strOrNull(line.rarity),
-  }
-}
-
-// Storage is shared with other tabs and could hold anything, so every field
-// is re-validated on the way in rather than trusted.
 function parseStored(raw) {
   try {
     const data = JSON.parse(raw)
-    if (!data || data.v !== 1 || !Array.isArray(data.lists)) return []
-    const seen = new Set()
-    const lists = []
-    for (const entry of data.lists) {
-      if (!entry || typeof entry.id !== 'string' || seen.has(entry.id) || !Array.isArray(entry.items)) continue
-      seen.add(entry.id)
-      const ids = new Set()
-      const items = []
-      for (const item of entry.items) {
-        if (!item || typeof item.id !== 'string' || ids.has(item.id)) continue
-        ids.add(item.id)
-        items.push(itemOf(item))
-        if (items.length >= MAX_ITEMS) break
-      }
-      const createdAt = numOrNull(entry.createdAt) ?? 0
-      lists.push({
-        id: entry.id,
-        name: cleanName(entry.name) || 'Untitled list',
-        createdAt,
-        updatedAt: numOrNull(entry.updatedAt) ?? createdAt,
-        // Lists from before refreshing existed were priced when saved.
-        pricedAt: numOrNull(entry.pricedAt) ?? createdAt,
-        items,
-      })
-      if (lists.length >= MAX_LISTS) break
-    }
-    return lists
+    return data && data.v === 1 ? sanitizeLists(data.lists) : []
   } catch {
     return []
   }
@@ -299,6 +257,19 @@ export function useSavedLists() {
     [updateList]
   )
 
+  /**
+   * Adds or updates lists from another browser (a link or backup file,
+   * already read and checked by listTransfer.js), as mergeLists() plans it.
+   * Returns { counts, firstId, error }; nothing is written if nothing changed.
+   */
+  const importLists = useCallback(
+    (incoming) => {
+      const { lists: next, counts, firstId } = mergeLists(listsRef.current, incoming)
+      return { counts, firstId, error: firstId ? commit(next) : null }
+    },
+    [commit]
+  )
+
   const undo = useCallback(() => {
     const info = undoRef.current
     if (info) updateList(info.listId, (list) => ({ ...list, ...info.restore }))
@@ -322,5 +293,5 @@ export function useSavedLists() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
-  return { lists, storageError, save, rename, remove, setQty, removeItem, refresh, undo, undoInfo }
+  return { lists, storageError, save, rename, remove, setQty, removeItem, refresh, importLists, undo, undoInfo }
 }

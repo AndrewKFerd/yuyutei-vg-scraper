@@ -2,13 +2,25 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 're
 import DeltaChip from './DeltaChip'
 import RarityBadge from './RarityBadge'
 import SaveListForm from './SaveListForm'
+import { ExportPanel, ImportPanel } from './ListTransfer'
 import Icon from './icons'
 import { EmptyMark } from './Logo'
 import { Button, IconButton } from './controls'
 import { formatPrice } from '../currency'
 import { derivedDetailUrl, derivedImageUrl } from '../catalogFormat'
+import { download } from '../download'
 import { formatDate, isoToMinute, timeAgo } from '../history'
 import { STORAGE_NOTES, defaultListName, itemName, refreshResultText, saveResultText } from '../useSavedLists'
+import {
+  MAX_TRANSFER_BYTES,
+  TransferError,
+  fillNames,
+  importResultText,
+  isTransferHash,
+  needsNames,
+  readBackupFile,
+  readTransferHash,
+} from '../listTransfer'
 import { focusSoon } from '../useDialogFocus'
 import { CONTAINER } from '../ui'
 
@@ -22,6 +34,8 @@ const tabId = (listId) => `sheet-tab-${listId}`
 const SINCE_SAVED = 'the time since these prices were saved'
 // How long "Already matches today's…" stays under the header.
 const NOTICE_MS = 5000
+// How long an import's result stays under the view's heading.
+const IMPORT_NOTICE_MS = 10000
 
 // Lettered A, B, C... above the headers, like a spreadsheet. The row-number
 // gutter and the remove-button column get no letter. Only the qty and
@@ -118,19 +132,6 @@ function sheetToCsv(rows, totals) {
   }
   lines.push(['Total', null, null, null, totals.copies, null, totals.savedJpy, null, totals.nowJpy, null])
   return lines.map((cells) => cells.map(csvCell).join(',')).join('\r\n')
-}
-
-function download(name, extension, blob) {
-  const filename = `${name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'saved-list'}.${extension}`
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-  return filename
 }
 
 // --- cells -------------------------------------------------------------------
@@ -918,7 +919,15 @@ function SavedListsView({
   // "Downloaded X.csv") still changes the region, and is read again.
   const [announcement, setAnnouncement] = useState({ text: '', n: 0 })
   const announce = (text) => setAnnouncement((prev) => ({ text, n: prev.n + 1 }))
+  const [exporting, setExporting] = useState(false)
+  // A link or file being imported (see ImportPanel), null otherwise.
+  const [pending, setPending] = useState(null)
+  // What the last import did, shown for a while under the heading.
+  const [importNotice, setImportNotice] = useState(null)
   const saveButtonRef = useRef(null)
+  const exportButtonRef = useRef(null)
+  const importButtonRef = useRef(null)
+  const fileRef = useRef(null)
   const headingRef = useRef(null)
   // Falls back to the newest list (e.g. the open one was deleted in another tab).
   const active = lists.find((list) => list.id === activeId) || lists[lists.length - 1] || null
@@ -927,6 +936,91 @@ function SavedListsView({
   const closeSave = () => {
     setSaving(false)
     focusSoon(() => saveButtonRef.current)
+  }
+
+  const closeExport = () => {
+    setExporting(false)
+    focusSoon(() => exportButtonRef.current || headingRef.current)
+  }
+
+  // A transfer link opened here (#import=...), on load or pasted into this
+  // tab's address bar. The fragment stays until the import is confirmed or
+  // closed, so a reload offers it again.
+  useEffect(() => {
+    let live = true
+    let current = null
+    const read = () => {
+      const { hash } = window.location
+      if (!isTransferHash(hash) || hash === current) return
+      current = hash
+      setPending({ source: 'link', status: 'reading' })
+      readTransferHash(hash).then(
+        ({ lists: incoming }) => {
+          if (live && current === hash) setPending({ source: 'link', status: 'ready', lists: incoming })
+        },
+        (err) => {
+          if (live && current === hash) setPending({ source: 'link', status: 'error', error: err?.code })
+        }
+      )
+    }
+    read()
+    window.addEventListener('hashchange', read)
+    return () => {
+      live = false
+      window.removeEventListener('hashchange', read)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!importNotice) return
+    const timer = setTimeout(() => setImportNotice(null), IMPORT_NOTICE_MS)
+    return () => clearTimeout(timer)
+  }, [importNotice])
+
+  const chooseFile = async (e) => {
+    const file = e.target.files?.[0]
+    // So choosing the same file again still fires a change.
+    e.target.value = ''
+    if (!file) return
+    const base = { source: 'file', fileName: file.name }
+    if (file.size > MAX_TRANSFER_BYTES) {
+      setPending({ ...base, status: 'error', error: 'too-big' })
+      return
+    }
+    setPending({ ...base, status: 'reading' })
+    try {
+      const { lists: incoming } = readBackupFile(await file.text())
+      setPending({ ...base, status: 'ready', lists: incoming })
+    } catch (err) {
+      setPending({ ...base, status: 'error', error: err instanceof TransferError ? err.code : 'broken' })
+    }
+  }
+
+  // Done with a link's fragment: drop it, so a reload doesn't offer the
+  // import again.
+  const endImport = () => {
+    if (pending?.source === 'link' && isTransferHash(window.location.hash)) {
+      const { pathname, search } = window.location
+      window.history.replaceState(window.history.state, '', `${pathname}${search}`)
+    }
+    setPending(null)
+  }
+
+  const cancelImport = () => {
+    const fromFile = pending?.source === 'file'
+    endImport()
+    focusSoon(() => (fromFile ? importButtonRef.current : null) || headingRef.current)
+  }
+
+  const confirmImport = () => {
+    const incoming = needsNames(pending.lists) ? fillNames(pending.lists, cardsById) : pending.lists
+    const { counts, firstId } = saved.importLists(incoming)
+    const text = importResultText(counts)
+    endImport()
+    if (firstId) onActiveChange(firstId)
+    setImportNotice(text)
+    announce(text)
+    focusSoon(() => (firstId ? document.getElementById(tabId(firstId)) : null) || headingRef.current)
   }
 
   const saveCurrent = (name) => {
@@ -963,16 +1057,72 @@ function SavedListsView({
             Saved lists
           </h2>
           <p className="text-sm text-fg-muted">
-            Price lists you’ve put aside, next to today’s prices. Kept in this browser only.
+            Price lists you’ve put aside, next to today’s prices. Kept in this browser only: to see them on your phone or
+            another computer, use Export lists.
           </p>
         </div>
-        {!saving && (
-          <Button ref={saveButtonRef} variant="primary" onClick={() => setSaving(true)} disabled={calcEmpty}>
-            <Icon name="plus" className="h-4 w-4" />
-            Save price list
+        <div className="flex flex-wrap items-center gap-2">
+          {!saving && (
+            <Button ref={saveButtonRef} variant="primary" onClick={() => setSaving(true)} disabled={calcEmpty}>
+              <Icon name="plus" className="h-4 w-4" />
+              Save price list
+            </Button>
+          )}
+          {lists.length > 0 && (
+            <Button
+              ref={exportButtonRef}
+              aria-expanded={exporting}
+              onClick={() => (exporting ? closeExport() : setExporting(true))}
+            >
+              <Icon name="upload" className="h-4 w-4" />
+              Export lists
+            </Button>
+          )}
+          <Button ref={importButtonRef} onClick={() => fileRef.current?.click()}>
+            <Icon name="download" className="h-4 w-4" />
+            Import lists
           </Button>
-        )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={chooseFile}
+          />
+        </div>
       </div>
+
+      {pending && (
+        <ImportPanel
+          pending={pending}
+          local={lists}
+          catalogStatus={catalogStatus}
+          onRetryCatalog={onRetryCatalog}
+          onConfirm={confirmImport}
+          onCancel={cancelImport}
+        />
+      )}
+
+      {importNotice && (
+        <p className="mt-3 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-xs text-fg-muted">
+          <Icon name="check" className="h-4 w-4 shrink-0 text-positive" />
+          <span className="min-w-0 flex-1">{importNotice}</span>
+          <IconButton icon="close" size="sm" label="Dismiss" onClick={() => setImportNotice(null)} />
+        </p>
+      )}
+
+      {exporting && lists.length > 0 && (
+        <ExportPanel
+          lists={lists}
+          active={active}
+          cardsById={cardsById}
+          catalogStatus={catalogStatus}
+          announce={announce}
+          onClose={closeExport}
+        />
+      )}
 
       {saving && (
         <div className="mt-3 max-w-xl rounded-lg border border-line bg-surface p-3 shadow-sm">
@@ -1052,6 +1202,10 @@ function SavedListsView({
             {calcEmpty
               ? 'Add cards to your price list with +, then save it here or from the list panel to keep a copy.'
               : 'Save your price list to keep a copy you can check against later prices or load back.'}
+          </p>
+          <p className="text-sm text-fg-muted">
+            Saved lists on another device? Open Saved lists there and use Export lists to bring them here, or import a
+            backup file.
           </p>
         </div>
       )}

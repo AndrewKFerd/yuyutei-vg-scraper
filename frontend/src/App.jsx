@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom'
 import { fetchCatalog, refreshCatalog } from './api'
 import { getRates } from './currency'
 import { DEFAULT_MOVER_WINDOW, MOVER_WINDOWS } from './history'
+import { isTransferHash } from './listTransfer'
 import { applyTheme, getInitialTheme } from './theme'
 import { useCalculator } from './useCalculator'
 import { useSavedLists } from './useSavedLists'
@@ -44,7 +45,9 @@ const VIEWS = ['search', 'movers', 'lists']
 // &set=<slug>, &rarity=, &sort= and &page= (defaults left out). Movers:
 // ?view=movers, &w=24h|30d (the 7d default is left out) and &nation=<code>.
 // Saved lists: ?view=lists (the lists themselves are local to the browser,
-// so which one is open isn't shared). Any view: &card=<id> opens that card's
+// so which one is open isn't shared); a #import= link of lists sent from
+// another browser opens there too, whatever the query says (see
+// listTransfer.js). Any view: &card=<id> opens that card's
 // modal. Set, rarity and nation are checked against the catalog once it has
 // loaded.
 function readUrlState() {
@@ -53,7 +56,7 @@ function readUrlState() {
   const sort = params.get('sort')
   const page = Number(params.get('page'))
   return {
-    view: VIEWS.includes(params.get('view')) ? params.get('view') : 'search',
+    view: isTransferHash(window.location.hash) ? 'lists' : VIEWS.includes(params.get('view')) ? params.get('view') : 'search',
     moversWindow: MOVER_WINDOWS.includes(w) ? w : DEFAULT_MOVER_WINDOW,
     moversNation: params.get('nation') || '',
     cardId: params.get('card') || null,

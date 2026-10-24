@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Button } from './controls'
-import { MAX_NAME_LENGTH } from '../useSavedLists'
+import { MAX_NAME_LENGTH } from '../savedListsData'
 import { FIELD } from '../ui'
 
 /**

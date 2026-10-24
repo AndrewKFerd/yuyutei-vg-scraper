@@ -61,6 +61,22 @@ const PATHS = {
       <path d="M10 9v4.5M10 6.5v.01" />
     </>
   ),
+  upload: <path d="M10 12.5V3.5M6.5 7L10 3.5 13.5 7M3.5 12.5v2.5a1.5 1.5 0 001.5 1.5h10a1.5 1.5 0 001.5-1.5v-2.5" />,
+  download: <path d="M10 3.5v9M6.5 9l3.5 3.5L13.5 9M3.5 12.5v2.5a1.5 1.5 0 001.5 1.5h10a1.5 1.5 0 001.5-1.5v-2.5" />,
+  copy: (
+    <>
+      <rect x="7" y="7" width="9.5" height="9.5" rx="1.5" />
+      <path d="M13 7V5a1.5 1.5 0 00-1.5-1.5H5A1.5 1.5 0 003.5 5v6.5A1.5 1.5 0 005 13h2" />
+    </>
+  ),
+  share: (
+    <>
+      <circle cx="14.5" cy="5" r="2" />
+      <circle cx="5.5" cy="10" r="2" />
+      <circle cx="14.5" cy="15" r="2" />
+      <path d="M7.3 9l5.4-3M7.3 11l5.4 3" />
+    </>
+  ),
 }
 
 export default function Icon({ name, className = 'h-5 w-5', ...rest }) {
