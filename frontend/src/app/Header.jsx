@@ -7,24 +7,40 @@ import { formatDateTime, isoToMinute, timeAgo } from '../lib/format'
 import { CONTAINER } from '../ui/classes'
 
 // Short labels until lg: from md the switcher shares the title's row, and
-// the full ones would squeeze the title there.
-const VIEWS = [
-  ['search', 'Search'],
-  [
-    'movers',
-    <>
-      <span className="lg:hidden">Movers</span>
-      <span className="hidden lg:inline">Market Movers</span>
-    </>,
-  ],
-  [
-    'lists',
-    <>
-      <span className="lg:hidden">Lists</span>
-      <span className="hidden lg:inline">Saved lists</span>
-    </>,
-  ],
-]
+// the full ones would squeeze the title there. The watchlist's tab carries
+// how many watched cards changed since they were last looked at.
+function viewOptions(watchNews) {
+  return [
+    ['search', 'Search'],
+    [
+      'movers',
+      <>
+        <span className="lg:hidden">Movers</span>
+        <span className="hidden lg:inline">Market Movers</span>
+      </>,
+    ],
+    [
+      'lists',
+      <>
+        <span className="lg:hidden">Lists</span>
+        <span className="hidden lg:inline">Saved lists</span>
+      </>,
+    ],
+    [
+      'watchlist',
+      <span className="inline-flex items-center gap-1.5">
+        <span className="lg:hidden">Watch</span>
+        <span className="hidden lg:inline">Watchlist</span>
+        {watchNews > 0 && (
+          <span className="min-w-5 rounded-full bg-gold-500 px-1.5 text-[11px] font-bold leading-5 tabular-nums text-gold-900">
+            {watchNews}
+            <span className="sr-only"> changed</span>
+          </span>
+        )}
+      </span>,
+    ],
+  ]
+}
 
 // Re-render once a minute so "updated 25m ago" keeps counting.
 function useMinuteTick() {
@@ -88,7 +104,20 @@ function Freshness({ meta, onRefresh, isRefreshing, refreshError }) {
   )
 }
 
-function Header({ meta, busy, theme, onToggleTheme, view, onViewChange, currency, onCurrencyChange, onRefresh, isRefreshing, refreshError }) {
+function Header({
+  meta,
+  busy,
+  theme,
+  onToggleTheme,
+  view,
+  onViewChange,
+  watchNews,
+  currency,
+  onCurrencyChange,
+  onRefresh,
+  isRefreshing,
+  refreshError,
+}) {
   const animateLogo = useDelayedFlag(busy, 300)
   return (
     <header className="site-header border-b border-line bg-surface">
@@ -107,7 +136,7 @@ function Header({ meta, busy, theme, onToggleTheme, view, onViewChange, currency
         {/* Its own row below md (wrapping the currency picker under the views
             on the narrowest phones); beside the title from md up. */}
         <div className="order-last flex w-full flex-wrap items-center justify-between gap-2 md:order-none md:w-auto md:justify-end">
-          <Segmented label="View" options={VIEWS} value={view} onChange={onViewChange} />
+          <Segmented label="View" options={viewOptions(watchNews)} value={view} onChange={onViewChange} />
           <CurrencySelector value={currency} onChange={onCurrencyChange} className="ml-auto md:ml-0" />
         </div>
 

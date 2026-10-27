@@ -9,10 +9,11 @@ import { SORT_OPTIONS } from '../lib/sorting'
 // Saved lists: ?view=lists (the lists themselves are local to the browser,
 // so which one is open isn't shared); a #import= link of lists sent from
 // another browser opens there too, whatever the query says (see
-// listTransfer.js). Any view: &card=<id> opens that card's modal. Set,
+// listTransfer.js). Watchlist: ?view=watchlist (local to the browser too).
+// Any view: &card=<id> opens that card's modal. Set,
 // rarity and nation are checked against the catalog once it has loaded.
 
-export const VIEWS = ['search', 'movers', 'lists']
+export const VIEWS = ['search', 'movers', 'lists', 'watchlist']
 const SORT_KEYS = SORT_OPTIONS.map(([key]) => key)
 
 /** The state the page opens with, from its URL. */

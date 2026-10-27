@@ -10,7 +10,7 @@ import { formatPrice } from '../../lib/currency'
 import { derivedDetailUrl, derivedImageUrl } from '../../lib/catalogFormat'
 import { sheetToCsv } from './csv'
 import { download } from '../../ui/download'
-import { formatDate, isoToMinute, timeAgo } from '../../lib/format'
+import { formatDate, isoToMinute, plural, timeAgo } from '../../lib/format'
 import { itemName } from './savedListsData'
 import { refreshResultText } from './useSavedLists'
 import { focusSoon } from '../../ui/useDialogFocus'
@@ -18,7 +18,6 @@ import { focusSoon } from '../../ui/useDialogFocus'
 // One saved list as a spreadsheet-style sheet (Sheet), and the sheet tabs
 // that switch between lists (SheetTabs), for the Saved lists view.
 
-const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 const toMinute = (ms) => Math.floor(ms / 60000)
 const tabId = (listId) => `sheet-tab-${listId}`
 const SINCE_SAVED = 'the time since these prices were saved'
@@ -153,6 +152,14 @@ function Money({ jpy, currency, rates }) {
   )
 }
 
+// The Watch all button's tooltip, for a sheet with `listed` cards in the
+// catalog, `unwatched` of them not watched yet.
+function watchAllTitle(listed, unwatched) {
+  if (listed === 0) return 'None of these cards are listed now'
+  if (unwatched === 0) return 'You’re watching every card in this list'
+  return 'Watch these cards for restocks and price changes'
+}
+
 // --- sheet -------------------------------------------------------------------
 
 function Sheet({
@@ -165,6 +172,7 @@ function Sheet({
   rates,
   catalogGeneratedAt,
   pdf,
+  watchlist,
   onSelectCard,
   onDelete,
   announce,
@@ -205,6 +213,13 @@ function Sheet({
   const catalogCards = useMemo(() => rows.map((row) => row.card).filter(Boolean), [rows])
   const empty = rows.length === 0
   const undoInfo = saved.undoInfo?.listId === list.id ? saved.undoInfo : null
+  // The sheet's listed cards nobody's watching yet.
+  const unwatched = catalogCards.filter((card) => !watchlist.watchedIds.has(card.id))
+
+  const watchAll = () => {
+    const added = watchlist.addCards(unwatched)
+    announce(added ? `Watching ${plural(added, 'more card', 'more cards')}` : 'Already watching these cards')
+  }
 
   useEffect(() => {
     if (!notice) return
@@ -403,6 +418,15 @@ function Sheet({
               Refresh
             </Button>
           </span>
+          <Button
+            size="sm"
+            onClick={watchAll}
+            disabled={unwatched.length === 0}
+            title={watchAllTitle(catalogCards.length, unwatched.length)}
+          >
+            <Icon name="eye" className="h-3.5 w-3.5" />
+            {catalogCards.length > 0 && unwatched.length === 0 ? 'All watched' : 'Watch all'}
+          </Button>
           <span className="flex items-center gap-1.5">
             <Button size="sm" onClick={exportCsv} disabled={empty}>
               Export CSV

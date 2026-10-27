@@ -19,10 +19,14 @@ const API_ROUTES = {
 const DETAILS_ROUTE = '/api/details'
 const DETAILS_MODULE = './api/details/[set].js'
 
-// Exactly one path segment after /api/details/, as the [set] route matches in
-// production (/api/details/a/dzbt12 is a 404 there). Anything else -> '' (which
-// the slug check then rejects).
-function detailsSlug(req) {
+// /api/decklog/<code> likewise (api/decklog/[code].js), as req.query.code.
+const DECKLOG_ROUTE = '/api/decklog'
+const DECKLOG_MODULE = './api/decklog/[code].js'
+
+// Exactly one path segment after the route's prefix, as the [set] and [code]
+// routes match in production (/api/details/a/dzbt12 is a 404 there).
+// Anything else -> '' (which the slug and code checks then reject).
+function singleSegment(req) {
   try {
     const segments = (req.url || '').split('?')[0].split('/').filter(Boolean)
     return segments.length === 1 ? decodeURIComponent(segments[0]) : ''
@@ -85,8 +89,14 @@ function apiDevMiddleware(env) {
       if (localDir) {
         server.config.logger.info(`  [api] Serving /api/* from LOCAL_DATA_DIR: ${localDir}`)
       }
+      // Not bucket data: always the real handler, which asks Deck Log.
+      server.middlewares.use(DECKLOG_ROUTE, async (req, res) => {
+        req.query = { code: singleSegment(req) }
+        const { default: handler } = await import(new URL(DECKLOG_MODULE, import.meta.url).href)
+        await handler(req, res)
+      })
       server.middlewares.use(DETAILS_ROUTE, async (req, res) => {
-        const slug = detailsSlug(req)
+        const slug = singleSegment(req)
         req.query = { set: slug }
         if (localDir) {
           // Same slug check production does before touching storage.

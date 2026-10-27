@@ -7,6 +7,7 @@ import { useCalculator } from './features/calculator/useCalculator'
 import { useCatalog } from './app/useCatalog'
 import { useSavedLists } from './features/saved-lists/useSavedLists'
 import { useSearch } from './features/search/useSearch'
+import { useWatchlist } from './features/watchlist/useWatchlist'
 import { readUrlState, useUrlSync } from './app/useUrlState'
 import Header from './app/Header'
 import { EmptyMark } from './ui/Logo'
@@ -15,6 +16,7 @@ import CardModal from './features/card/CardModal'
 import CalculatorBar, { CalculatorPanel } from './features/calculator/CalculatorBar'
 import MoversView, { DEFAULT_MIN_PRICE } from './features/movers/MoversView'
 import SavedListsView from './features/saved-lists/SavedListsView'
+import WatchlistView from './features/watchlist/WatchlistView'
 import PdfToast from './features/saved-lists/PdfToast'
 import Footer from './app/Footer'
 import Icon from './ui/icons'
@@ -33,7 +35,7 @@ function App() {
   const [selection, setSelection] = useState({ card: null, list: null })
   const selectedCard = selection.card
   const [theme, setTheme] = useState(getInitialTheme)
-  const [view, setView] = useState(initialUrl.view) // 'search' | 'movers' | 'lists'
+  const [view, setView] = useState(initialUrl.view) // 'search' | 'movers' | 'lists' | 'watchlist'
   // The header's view switcher: a short cross-fade where the browser has
   // view transitions (styles in index.css), an instant switch otherwise.
   const changeView = useCallback((next) => {
@@ -143,6 +145,19 @@ function App() {
     catalogReady: status === 'ready',
     catalogGeneratedAt: meta?.generatedAt,
   })
+  const watchlist = useWatchlist({
+    cardsById,
+    catalogReady: status === 'ready',
+    catalogGeneratedAt: meta?.generatedAt,
+    dataVersion: catalog.dataVersion,
+  })
+  // "(3) Yuyu-tei Card Search" while watched cards have news, so a pinned
+  // or background tab shows it.
+  const [baseTitle] = useState(() => document.title)
+  useEffect(() => {
+    document.title = watchlist.newsCount > 0 ? `(${watchlist.newsCount}) ${baseTitle}` : baseTitle
+  }, [watchlist.newsCount, baseTitle])
+
   // Room for the sticky calculator bar so Pagination/Footer stay reachable.
   const calcBarVisible = calc.items.length > 0 || Boolean(calc.undoInfo) || calcOpen
 
@@ -187,6 +202,7 @@ function App() {
         onToggleTheme={toggleTheme}
         view={view}
         onViewChange={changeView}
+        watchNews={watchlist.newsCount}
         currency={currency}
         onCurrencyChange={setCurrency}
         onRefresh={catalog.refresh}
@@ -231,6 +247,7 @@ function App() {
           <SavedListsView
             saved={savedLists}
             calc={calc}
+            cards={cards}
             cardsById={cardsById}
             catalogStatus={status}
             onRetryCatalog={catalog.retry}
@@ -241,10 +258,25 @@ function App() {
             activeId={activeListId}
             onActiveChange={setActiveListId}
             onSelectCard={selectCard}
+            watchlist={watchlist}
           />
         )}
 
-        {status === 'error' && view !== 'lists' && (
+        {/* Like saved lists, the watchlist lives in this browser; the view
+            says itself when the catalog it compares against fails. */}
+        {view === 'watchlist' && (
+          <WatchlistView
+            watchlist={watchlist}
+            calc={calc}
+            catalogStatus={status}
+            onRetryCatalog={catalog.retry}
+            currency={currency}
+            rates={rates}
+            onSelectCard={selectCard}
+          />
+        )}
+
+        {status === 'error' && view !== 'lists' && view !== 'watchlist' && (
           <div role="alert" className="mx-auto flex max-w-md flex-col items-center gap-3 px-4 py-16 text-center">
             <EmptyMark icon="info" />
             <p className="text-base font-semibold text-fg">Couldn’t load the card catalog</p>
@@ -274,6 +306,8 @@ function App() {
         dataVersion={catalog.dataVersion}
         calcQty={selectedCard ? calc.qtyById.get(selectedCard.id) || 0 : 0}
         onCalcChange={calc.setQtyFor}
+        watched={selectedCard ? watchlist.watchedIds.has(selectedCard.id) : false}
+        onToggleWatch={watchlist.toggle}
         cards={cards}
       />
 

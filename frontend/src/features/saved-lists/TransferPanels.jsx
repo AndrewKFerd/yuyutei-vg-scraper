@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from '../../ui/icons'
 import { Button, IconButton, Segmented } from '../../ui/controls'
 import { download } from '../../ui/download'
+import PanelHeading from '../../ui/PanelHeading'
+import { plural } from '../../lib/format'
 import { FIELD } from '../../ui/classes'
 import { MAX_LISTS } from './savedListsData'
 import { backupFileText, countPlan, needsNames, planImport, transferErrorText, transferLink } from './listTransfer'
@@ -11,7 +13,6 @@ import { backupFileText, countPlan, needsNames, planImport, transferErrorText, t
 // (what a link or file holds, and what importing it would do, before
 // anything changes). The formats live in listTransfer.js.
 
-const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 // The QR code stops at version 22 (105 modules a side): denser codes get hard
 // to scan off a screen. That's about 1 KB of link: 45 catalog cards take
 // under 500 characters.
@@ -145,18 +146,10 @@ export function ExportPanel({ lists, active, cardsById, catalogStatus, announce,
       }}
       className={`${PANEL} border-line bg-surface`}
     >
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <h3 id="export-lists-title" ref={headingRef} tabIndex={-1} className="text-base font-bold text-fg outline-none">
-            Open your saved lists on another device
-          </h3>
-          <p className="text-xs text-fg-muted">
-            Saved lists stay in the browser they were made in. To see them on your phone or another computer, send them
-            across with a link, or keep them in a backup file.
-          </p>
-        </div>
-        <IconButton icon="close" size="sm" label="Close" onClick={onClose} />
-      </div>
+      <PanelHeading id="export-lists-title" ref={headingRef} title="Open your saved lists on another device" onClose={onClose}>
+        Saved lists stay in the browser they were made in. To see them on your phone or another computer, send them
+        across with a link, or keep them in a backup file.
+      </PanelHeading>
 
       {lists.length > 1 && active && (
         <Segmented

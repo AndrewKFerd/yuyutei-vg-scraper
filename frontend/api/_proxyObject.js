@@ -5,6 +5,7 @@
 // api/history.js and api/movers.js.
 import { pipeline } from 'node:stream/promises'
 import { fetchObjectStream } from './_supabaseCards.js'
+import { sendJson } from './_json.js'
 
 // history-public.json / movers.json only exist once the pipeline has
 // recorded its first run -- a plain "not there yet", which the client
@@ -13,16 +14,6 @@ import { fetchObjectStream } from './_supabaseCards.js'
 // are misconfiguration and must surface as errors, not as "no data yet".
 function isMissingObject(err) {
   return err?.name === 'NoSuchKey'
-}
-
-function sendJson(res, statusCode, body, cacheControl = 'no-store') {
-  res.statusCode = statusCode
-  res.setHeader('Content-Type', 'application/json')
-  res.setHeader('X-Content-Type-Options', 'nosniff')
-  // Errors are never edge-cached (the next request should retry) -- except
-  // a deliberately short-lived 404, see notFoundCacheControl below.
-  res.setHeader('Cache-Control', cacheControl)
-  res.end(JSON.stringify(body))
 }
 
 /**

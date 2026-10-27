@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { MAX_ITEMS, clampQty } from '../../lib/limits'
 import { MAX_LISTS, cleanName, itemName, itemOf, sanitizeLists } from './savedListsData'
 import { mergeLists } from './listTransfer'
+import { useStorageEvent } from '../../data/useStorageEvent'
 
 // Saved lists: named copies of the price list (the calculator), put aside in
 // localStorage to compare against today's prices later or load back. Each
@@ -276,21 +277,16 @@ export function useSavedLists() {
 
   // Another tab changed the lists. Its write succeeded, so storage and this
   // tab agree again (dropping any change that only lived in memory here).
-  useEffect(() => {
-    const onStorage = (e) => {
-      if (e.key !== SAVED_LISTS_KEY) return
-      const next = e.newValue ? parseStored(e.newValue) : []
-      listsRef.current = next
-      setLists(next)
-      setStorageError(null)
-      // An Undo captured before the sync would resurrect the old rows.
-      clearTimeout(timerRef.current)
-      undoRef.current = null
-      setUndoInfo(null)
-    }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-  }, [])
+  useStorageEvent(SAVED_LISTS_KEY, (value) => {
+    const next = value ? parseStored(value) : []
+    listsRef.current = next
+    setLists(next)
+    setStorageError(null)
+    // An Undo captured before the sync would resurrect the old rows.
+    clearTimeout(timerRef.current)
+    undoRef.current = null
+    setUndoInfo(null)
+  })
 
   return { lists, storageError, save, rename, remove, setQty, removeItem, refresh, importLists, undo, undoInfo }
 }

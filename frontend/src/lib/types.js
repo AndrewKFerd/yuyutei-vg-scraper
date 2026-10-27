@@ -105,6 +105,24 @@
  */
 
 /**
+ * A price and stock, and the minute they're known to be from.
+ * @typedef {{ price: number | null, stock: number | null, at: number }} PriceState
+ */
+
+/**
+ * A watched card (localStorage `yuyutei:watchlist`). `seen` is the price
+ * and stock as last looked at: what "since you last looked" compares
+ * against. Times are minutes.
+ * @typedef {object} WatchItem
+ * @property {string} id
+ * @property {number} addedAt
+ * @property {number | null} target  JPY. Reaching it, in stock, is a change worth showing.
+ * @property {PriceState} seen
+ * @property {{ nameEn: string | null, nameJp: string | null, setCode: string | null, rarity: string | null }} snap
+ *   Names from when it was added, for a card no longer in the catalog.
+ */
+
+/**
  * A price list (calculator) line as stored: the card, how many, and a
  * snapshot for when the catalog doesn't have it.
  * @typedef {object} CalcItem

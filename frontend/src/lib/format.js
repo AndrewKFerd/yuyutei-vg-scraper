@@ -61,6 +61,11 @@ export function formatShortRange(from, to) {
   return `${formatDate(from)}–${formatDate(to)}`
 }
 
+/** "1 card" / "1,200 cards". */
+export function plural(n, one, many) {
+  return `${n.toLocaleString()} ${n === 1 ? one : many}`
+}
+
 /** Percent change from -> to, or null when there's no meaningful base. */
 export function pctChange(from, to) {
   if (!Number.isFinite(from) || !Number.isFinite(to) || from <= 0) return null

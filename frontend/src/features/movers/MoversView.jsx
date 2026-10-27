@@ -3,8 +3,10 @@ import CardTile from '../../ui/CardTile'
 import { GridSkeleton } from '../../ui/CardGrid'
 import Icon from '../../ui/icons'
 import { EmptyMark } from '../../ui/Logo'
+import WarningNote from '../../ui/WarningNote'
 import { Button, Segmented, Select } from '../../ui/controls'
 import { formatPrice } from '../../lib/currency'
+import { withCurrent } from '../../lib/catalogFormat'
 import { CONTAINER, GRID } from '../../ui/classes'
 import { formatBetween, formatDate, formatDateTime, pctChange, timeAgo } from '../../lib/format'
 import {
@@ -39,8 +41,6 @@ function isBetterRepresentative(a, b) {
   return (a.nameJp || '').length < (b.nameJp || '').length
 }
 
-const yenDisplay = (price) => `¥${price.toLocaleString('en-US')}`
-
 // card.nation is a code ('KS'), an array of codes for a multi-nation card,
 // or absent (see pipeline/nation.js). '' = all nations.
 function inNation(card, nation) {
@@ -48,22 +48,13 @@ function inNation(card, nation) {
   return Array.isArray(card.nation) ? card.nation.includes(nation) : card.nation === nation
 }
 
-// Tiles show the movers-side price/stock, not the catalog's: the catalog is
-// cached for up to an hour while movers/history refresh every 30 minutes, so
-// a returning visitor's catalog can say "¥500, 1 in stock" for a card this
-// view lists as "¥500 -> ¥1,480, just sold out". The same object is what a
-// tap passes to the card modal. Returns the catalog object itself when
-// nothing differs (and is only called inside useMemo, so identities stay
-// stable for CardTile's memo).
-function withCurrent(card, price, stock) {
-  if (card.price === price && card.stock === stock) return card
-  if (price === card.price) return { ...card, stock }
-  // chg7d is relative to the catalog's (older) price, so it no longer
-  // applies once the price is replaced.
-  const rest = { ...card }
-  delete rest.chg7d
-  return { ...rest, price, priceDisplay: yenDisplay(price), stock }
-}
+// Tiles show the movers-side price/stock (withCurrent), not the catalog's:
+// the catalog is cached for up to an hour while movers/history refresh
+// every 30 minutes, so a returning visitor's catalog can say "¥500, 1 in
+// stock" for a card this view lists as "¥500 -> ¥1,480, just sold out". The
+// same object is what a tap passes to the card modal. withCurrent hands back
+// the catalog object itself when nothing differs (and is only called inside
+// useMemo, so identities stay stable for CardTile's memo).
 
 // Current stock for a price-change tile: history's latest entry, if it's
 // the entry that set this price (movers.json's price entries carry no stock).
@@ -405,17 +396,14 @@ function MoversView({
               <span title={formatDateTime(movers.asOf)}>{timeAgo(movers.asOf)}</span>
             </p>
             {(win.complete === false || sinceGap) && (
-              <p className="mt-2 flex items-start gap-2 rounded-lg border border-highlight-line bg-highlight px-3 py-2 text-xs text-fg">
-                <Icon name="info" className="mt-px h-4 w-4 text-warning" />
-                <span>
-                  {win.complete === false &&
-                    (history
-                      ? `History only goes back to ${formatDate(history.trackingSince, { year: true })}, so this window is partial. `
-                      : 'History doesn’t cover this whole window yet, so it is partial. ')}
-                  {sinceGap &&
-                    `No observations between ${formatBetween(sinceGap[0], sinceGap[1])}, so some of these changes may be older than ${windowPeriod(windowKey)}.`}
-                </span>
-              </p>
+              <WarningNote className="mt-2">
+                {win.complete === false &&
+                  (history
+                    ? `History only goes back to ${formatDate(history.trackingSince, { year: true })}, so this window is partial. `
+                    : 'History doesn’t cover this whole window yet, so it is partial. ')}
+                {sinceGap &&
+                  `No observations between ${formatBetween(sinceGap[0], sinceGap[1])}, so some of these changes may be older than ${windowPeriod(windowKey)}.`}
+              </WarningNote>
             )}
           </>
         )}

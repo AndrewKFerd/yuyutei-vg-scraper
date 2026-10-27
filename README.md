@@ -9,6 +9,8 @@ An English search site for [yuyu-tei.jp](https://yuyu-tei.jp)'s full Cardfight!!
 - **Search** every card by English or Japanese name, set code or rarity, and filter by set and rarity.
 - **Card popup** with the card's text, a price/stock history chart, and a link to yuyu-tei.
 - **Market Movers**: biggest risers and drops, sold out, back in stock and selling fast, over 24 hours, 7 days or 30 days. Filter by nation and minimum price.
+- **Watchlist**: watch cards (or a whole saved list) and see what changed since you last looked: back in stock, price moves, a target price reached, and the ups and downs in between. The tab shows how many changed.
+- **Deck import**: paste a [Deck Log](https://decklog.bushiroad.com) link or code, or a decklist as text, and get the deck's yuyu-tei listings, from the printings it names or the cheapest ones in stock. Add it to the price list, save it as a list, or watch the cards that are sold out.
 - **Prices in other currencies** and a light/dark theme.
 
 English names come from the official English card database where a card has been released in English, otherwise from the Cardfight!! Vanguard Wiki's fan translations, otherwise from a built-in Japanese-to-English name translator.

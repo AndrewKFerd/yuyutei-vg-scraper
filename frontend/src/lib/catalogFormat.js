@@ -14,6 +14,25 @@ export const derivedPriceDisplay = (price) =>
   Number.isFinite(price) ? `¥${price.toLocaleString('en-US')}` : null
 
 /**
+ * The card with a price and stock newer than the catalog's (from movers.json
+ * or the price history), for tiles and the card modal: its priceDisplay
+ * follows the new price, and its 7-day change (relative to the catalog's
+ * older price) is dropped. The same object when nothing differs, so memoized
+ * tiles don't re-render.
+ * @param {import('./types.js').Card} card
+ * @param {number | null} price
+ * @param {number | null} stock
+ * @returns {import('./types.js').Card}
+ */
+export function withCurrent(card, price, stock) {
+  if (card.price === price && card.stock === stock) return card
+  if (price === card.price) return { ...card, stock }
+  const rest = { ...card }
+  delete rest.chg7d
+  return { ...rest, price, priceDisplay: derivedPriceDisplay(price), stock }
+}
+
+/**
  * Fills in the omitted derived fields on every card, in place (the array is
  * a freshly parsed response, and copying 28k objects would just be churn).
  * `=== undefined` rather than a falsy check: an explicit null in the data

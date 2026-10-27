@@ -88,7 +88,8 @@ function isArrowTargetBusy(e) {
 // reloads. `calcQty` / `onCalcChange(card, qty)` are the price list's
 // quantity for this card and its setter (qty 0 removes). `onPrev` / `onNext`
 // (null at either end, or when the card wasn't opened from a list) and
-// `position` ({ index, total }) drive the previous/next controls.
+// `position` ({ index, total }) drive the previous/next controls. `watched`
+// / `onToggleWatch(card)` are the watchlist's.
 function CardModal({
   card,
   currency,
@@ -104,6 +105,8 @@ function CardModal({
   dataVersion,
   calcQty,
   onCalcChange,
+  watched,
+  onToggleWatch,
   cards,
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false)
@@ -283,7 +286,18 @@ function CardModal({
           ) : (
             <span className="px-2 font-mono text-xs text-fg-subtle">{card.setCode}</span>
           )}
-          <IconButton icon="close" label="Close" onClick={onClose} className="ml-auto" />
+          <Button
+            size="sm"
+            variant={watched ? 'secondary' : 'ghost'}
+            aria-pressed={watched}
+            onClick={() => onToggleWatch(card)}
+            title={watched ? 'Stop watching this card' : 'Watch this card for restocks and price changes'}
+            className={`ml-auto ${watched ? 'border-accent text-accent' : ''}`}
+          >
+            <Icon name="eye" className="h-4 w-4" />
+            {watched ? 'Watching' : 'Watch'}
+          </Button>
+          <IconButton icon="close" label="Close" onClick={onClose} />
         </div>
 
         <div ref={scrollRef} className="flex min-h-0 flex-col gap-5 overflow-y-auto p-5 sm:grid sm:grid-cols-[200px_1fr] sm:p-6">

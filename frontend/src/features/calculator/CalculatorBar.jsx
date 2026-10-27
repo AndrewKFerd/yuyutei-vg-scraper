@@ -4,11 +4,11 @@ import QtyStepper from '../../ui/QtyStepper'
 import SaveListForm from '../saved-lists/SaveListForm'
 import { Button } from '../../ui/controls'
 import { formatPrice } from '../../lib/currency'
+import { plural } from '../../lib/format'
 import { formatListAsText } from './useCalculator'
 import { defaultListName, saveResultText } from '../saved-lists/useSavedLists'
 import { focusSoon, useDialogFocus } from '../../ui/useDialogFocus'
 
-const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 const nameOf = (line) => line.nameEn || line.nameJp || line.setCode || 'card'
 
 // Total in the display currency, then (when converted) the JPY it came from.

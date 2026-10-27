@@ -86,7 +86,7 @@ export function Select({ value, onChange, label, className = '', children, ...re
  * is [[key, label], ...]; buttons report their state with aria-pressed.
  */
 export function Segmented({ label, options, value, onChange, size = 'md', className = '' }) {
-  const pad = size === 'sm' ? 'min-h-7 px-2.5 text-[11px]' : 'min-h-8 px-4 text-sm'
+  const pad = size === 'sm' ? 'min-h-7 px-2.5 text-[11px]' : 'min-h-8 px-3 text-sm sm:px-4'
   const pill = useSlidingPill(value)
   return (
     <div

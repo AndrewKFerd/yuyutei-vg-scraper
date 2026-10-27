@@ -41,6 +41,9 @@ export default [
       'src/features/card/translate/**/*.js',
       'src/features/saved-lists/savedListsData.js',
       'src/features/saved-lists/listTransfer.js',
+      'src/features/watchlist/watchlistData.js',
+      'src/features/deck-import/deckText.js',
+      'src/features/deck-import/deckMatch.js',
     ],
     rules: {
       'no-restricted-syntax': [

@@ -6,6 +6,7 @@
 // the pipeline tests import this.
 
 import { MAX_LISTS, sanitizeLists } from './savedListsData.js'
+import { plural } from '../../lib/format.js'
 
 /** @typedef {import('../../lib/types.js').SavedList} SavedList */
 /** @typedef {'new' | 'update' | 'same' | 'kept' | 'full'} ImportStatus */
@@ -264,7 +265,6 @@ export function mergeLists(local, incoming) {
   }
 }
 
-const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 
 /** What an import did, for the view's notice and the screen reader. */
 export function importResultText({ new: added, update, same, kept, full }) {

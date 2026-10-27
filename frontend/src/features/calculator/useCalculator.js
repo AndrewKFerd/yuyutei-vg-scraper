@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatPrice } from '../../lib/currency'
 import { MAX_ITEMS, clampQty, numOrNull, strOrNull } from '../../lib/limits'
+import { useStorageEvent } from '../../data/useStorageEvent'
 
 // The price calculator's list: which cards, how many of each, and a
 // snapshot of each card's price/stock so the sum still adds up when the card
@@ -278,6 +279,34 @@ export function useCalculator({ cardsById, catalogReady, catalogGeneratedAt }) {
     [atFor, commit]
   )
 
+  // Adds catalog cards in bulk (an imported deck), with Undo: `entries` are
+  // { card, qty }; a card already in the list gets the copies added to it.
+  // Returns how many entries didn't fit (the list is full).
+  const addMany = useCallback(
+    (entries, text) => {
+      const prev = itemsRef.current
+      const next = [...prev]
+      const index = new Map(prev.map((item, i) => [item.id, i]))
+      let skipped = 0
+      for (const { card, qty } of entries) {
+        const i = index.get(card.id)
+        if (i !== undefined) {
+          next[i] = { ...next[i], qty: clampQty(next[i].qty + qty) }
+          continue
+        }
+        if (next.length >= MAX_ITEMS) {
+          skipped++
+          continue
+        }
+        index.set(card.id, next.length)
+        next.push({ id: card.id, qty: clampQty(qty), at: atFor(card), snap: snapOf(card) })
+      }
+      commit(next, { text, undo: prev })
+      return skipped
+    },
+    [atFor, commit]
+  )
+
   const undo = useCallback(() => {
     const info = undoRef.current
     if (!info) return
@@ -324,20 +353,15 @@ export function useCalculator({ cardsById, catalogReady, catalogGeneratedAt }) {
   }, [items])
 
   // Another tab changed the list.
-  useEffect(() => {
-    const onStorage = (e) => {
-      if (e.key !== STORAGE_KEY) return
-      const next = e.newValue ? parseStored(e.newValue) : []
-      itemsRef.current = next
-      setItems(next)
-      // An Undo captured before the sync would resurrect the old list.
-      clearTimeout(timerRef.current)
-      undoRef.current = null
-      setUndoInfo(null)
-    }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-  }, [])
+  useStorageEvent(STORAGE_KEY, (value) => {
+    const next = value ? parseStored(value) : []
+    itemsRef.current = next
+    setItems(next)
+    // An Undo captured before the sync would resurrect the old list.
+    clearTimeout(timerRef.current)
+    undoRef.current = null
+    setUndoInfo(null)
+  })
 
   const qtyById = useMemo(() => new Map(items.map((i) => [i.id, i.qty])), [items])
 
@@ -370,7 +394,7 @@ export function useCalculator({ cardsById, catalogReady, catalogGeneratedAt }) {
 
   const totals = useMemo(() => computeTotals(lines), [lines])
 
-  return { items, qtyById, lines, totals, toggle, setQtyFor, setQty, remove, clear, replaceAll, undo, undoInfo, message }
+  return { items, qtyById, lines, totals, toggle, setQtyFor, setQty, remove, clear, replaceAll, addMany, undo, undoInfo, message }
 }
 
 const jpy = (n) => formatPrice(n, 'JPY', null)

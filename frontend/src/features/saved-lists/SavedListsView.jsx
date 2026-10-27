@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import SaveListForm from './SaveListForm'
+import DeckImportPanel from '../deck-import/DeckImportPanel'
 import Sheet, { SheetTabs } from './Sheet'
 import { ExportPanel, ImportPanel } from './TransferPanels'
 import Icon from '../../ui/icons'
 import { EmptyMark } from '../../ui/Logo'
+import WarningNote, { CatalogErrorNote } from '../../ui/WarningNote'
+import { plural } from '../../lib/format'
 import { Button, IconButton } from '../../ui/controls'
 import { STORAGE_NOTES, defaultListName, saveResultText } from './useSavedLists'
 import {
@@ -24,7 +27,6 @@ import { CONTAINER } from '../../ui/classes'
 // prices, plus moving lists to and from other browsers (TransferPanels.jsx).
 // No fetching of its own: "Price now" is whatever the catalog says.
 
-const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 // How long an import's result stays under the view's heading.
 const IMPORT_NOTICE_MS = 10000
 // The open list's sheet tab, once a change of list has rendered.
@@ -38,6 +40,7 @@ const selectedTab = () => document.querySelector('[role="tab"][aria-selected="tr
 function SavedListsView({
   saved,
   calc,
+  cards,
   cardsById,
   catalogStatus,
   onRetryCatalog,
@@ -48,6 +51,7 @@ function SavedListsView({
   activeId,
   onActiveChange,
   onSelectCard,
+  watchlist,
 }) {
   const { lists } = saved
   const [saving, setSaving] = useState(false)
@@ -56,6 +60,7 @@ function SavedListsView({
   const [announcement, setAnnouncement] = useState({ text: '', n: 0 })
   const announce = (text) => setAnnouncement((prev) => ({ text, n: prev.n + 1 }))
   const [exporting, setExporting] = useState(false)
+  const [importingDeck, setImportingDeck] = useState(false)
   // A link or file being imported (see ImportPanel), null otherwise.
   const [pending, setPending] = useState(null)
   // What the last import did, shown for a while under the heading.
@@ -63,6 +68,7 @@ function SavedListsView({
   const saveButtonRef = useRef(null)
   const exportButtonRef = useRef(null)
   const importButtonRef = useRef(null)
+  const deckButtonRef = useRef(null)
   const fileRef = useRef(null)
   const headingRef = useRef(null)
   // Falls back to the newest list (e.g. the open one was deleted in another tab).
@@ -72,6 +78,18 @@ function SavedListsView({
   const closeSave = () => {
     setSaving(false)
     focusSoon(() => saveButtonRef.current)
+  }
+
+  const closeDeckImport = () => {
+    setImportingDeck(false)
+    focusSoon(() => deckButtonRef.current || headingRef.current)
+  }
+
+  // A list the deck importer saved: open it, done importing.
+  const openSavedDeck = (listId) => {
+    onActiveChange(listId)
+    setImportingDeck(false)
+    focusSoon(() => selectedTab() || headingRef.current)
   }
 
   const closeExport = () => {
@@ -214,6 +232,14 @@ function SavedListsView({
               Export lists
             </Button>
           )}
+          <Button
+            ref={deckButtonRef}
+            aria-expanded={importingDeck}
+            onClick={() => (importingDeck ? closeDeckImport() : setImportingDeck(true))}
+          >
+            <Icon name="layers" className="h-4 w-4" />
+            Import deck
+          </Button>
           <Button ref={importButtonRef} onClick={() => fileRef.current?.click()}>
             <Icon name="download" className="h-4 w-4" />
             Import lists
@@ -229,6 +255,23 @@ function SavedListsView({
           />
         </div>
       </div>
+
+      {importingDeck && (
+        <DeckImportPanel
+          cards={cards}
+          catalogStatus={catalogStatus}
+          onRetryCatalog={onRetryCatalog}
+          calc={calc}
+          saved={saved}
+          watchlist={watchlist}
+          currency={currency}
+          rates={rates}
+          onSelectCard={onSelectCard}
+          onSaved={openSavedDeck}
+          onClose={closeDeckImport}
+          announce={announce}
+        />
+      )}
 
       {pending && (
         <ImportPanel
@@ -274,28 +317,15 @@ function SavedListsView({
       )}
 
       {catalogStatus === 'error' && (
-        <p
-          role="alert"
-          className="mt-3 flex items-start gap-2 rounded-lg border border-highlight-line bg-highlight px-3 py-2 text-xs text-fg"
-        >
-          <Icon name="info" className="mt-px h-4 w-4 text-warning" />
-          <span>
-            Couldn’t load the card catalog, so current prices aren’t shown — your saved lists are fine.{' '}
-            <Button variant="link" size="inline" onClick={onRetryCatalog}>
-              Try again
-            </Button>
-          </span>
-        </p>
+        <CatalogErrorNote onRetry={onRetryCatalog}>
+          Couldn’t load the card catalog, so current prices aren’t shown — your saved lists are fine.
+        </CatalogErrorNote>
       )}
 
       {saved.storageError && (
-        <p
-          role="alert"
-          className="mt-3 flex items-start gap-2 rounded-lg border border-highlight-line bg-highlight px-3 py-2 text-xs text-fg"
-        >
-          <Icon name="info" className="mt-px h-4 w-4 text-warning" />
-          <span>{STORAGE_NOTES[saved.storageError]}</span>
-        </p>
+        <WarningNote role="alert" className="mt-3">
+          {STORAGE_NOTES[saved.storageError]}
+        </WarningNote>
       )}
 
       {active ? (
@@ -317,6 +347,7 @@ function SavedListsView({
               rates={rates}
               catalogGeneratedAt={catalogGeneratedAt}
               pdf={pdf}
+              watchlist={watchlist}
               onSelectCard={onSelectCard}
               onDelete={deleteList}
               announce={announce}
@@ -338,6 +369,9 @@ function SavedListsView({
             {calcEmpty
               ? 'Add cards to your price list with +, then save it here or from the list panel to keep a copy.'
               : 'Save your price list to keep a copy you can check against later prices or load back.'}
+          </p>
+          <p className="text-sm text-fg-muted">
+            Have a deck in mind? Import deck reads a Deck Log link or a pasted decklist.
           </p>
           <p className="text-sm text-fg-muted">
             Saved lists on another device? Open Saved lists there and use Export lists to bring them here, or import a
