@@ -2,12 +2,13 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import CardTile from '../../ui/CardTile'
 import { GridSkeleton } from '../../ui/CardGrid'
 import Icon from '../../ui/icons'
-import { EmptyMark } from '../../ui/Logo'
+import EmptyState from '../../ui/EmptyState'
+import { useGridKeys } from '../../ui/useGridKeys'
 import WarningNote from '../../ui/WarningNote'
 import { Button, Segmented, Select } from '../../ui/controls'
 import { formatPrice } from '../../lib/currency'
 import { withCurrent } from '../../lib/catalogFormat'
-import { CONTAINER, GRID } from '../../ui/classes'
+import { CONTAINER, GRID, PAGE_TITLE, SECTION_TITLE, pillClass } from '../../ui/classes'
 import { formatBetween, formatDate, formatDateTime, pctChange, timeAgo } from '../../lib/format'
 import {
   MOVER_WINDOWS,
@@ -148,7 +149,7 @@ const sectionId = (key) => `movers-${key}`
 // away instead of four screens of scrolling.
 function SectionJumps({ sections }) {
   return (
-    <nav aria-label="Jump to list" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+    <nav aria-label="Jump to list" className="scroll-fade-x -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 pr-6">
       {Object.entries(SECTION_META).map(([key, { short, icon, iconClass }]) => (
         <a
           key={key}
@@ -160,7 +161,7 @@ function SectionJumps({ sections }) {
               behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
             })
           }}
-          className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-full border border-line-strong bg-surface px-3 text-xs font-medium text-fg shadow-sm transition hover:border-accent hover:text-accent"
+          className={pillClass('link')}
         >
           <Icon name={icon} className={`h-4 w-4 ${iconClass}`} />
           {short}
@@ -185,15 +186,16 @@ const MoversSection = memo(
   // The modal's previous/next walk this list (all of it, not just the preview).
   const list = useMemo(() => tiles.map((tile) => tile.card), [tiles])
   const select = useCallback((card) => onSelect(card, list), [onSelect, list])
+  const gridKeys = useGridKeys(visible.length)
 
   return (
-    <section id={sectionId(sectionKey)} aria-labelledby={headingId} className="scroll-mt-4">
+    <section id={sectionId(sectionKey)} aria-labelledby={headingId} className="scroll-mt-32">
       <div className="pb-2.5">
-        <h2 id={headingId} className="flex items-center gap-2 text-base font-semibold text-fg">
+        <h3 id={headingId} className={`flex items-center gap-2 ${SECTION_TITLE}`}>
           <Icon name={icon} className={`h-5 w-5 ${iconClass}`} />
           {title}
           <span className="text-sm font-normal tabular-nums text-fg-subtle">{tiles.length.toLocaleString()}</span>
-        </h2>
+        </h3>
         {description && <p className="mt-0.5 text-xs text-fg-muted">{description}</p>}
       </div>
 
@@ -203,10 +205,12 @@ const MoversSection = memo(
         </p>
       ) : (
         <>
-          <div className={GRID}>
-            {visible.map((tile) => (
+          <div className={GRID} {...gridKeys.gridProps}>
+            {visible.map((tile, i) => (
               <CardTile
                 key={tile.card.id}
+                index={i}
+                tabIndex={i === gridKeys.active ? 0 : -1}
                 card={tile.card}
                 currency={currency}
                 rates={rates}
@@ -341,6 +345,7 @@ function MoversView({
 
   return (
     <div className={`${CONTAINER} pb-10 pt-5`}>
+      <h2 className={`${PAGE_TITLE} mb-3`}>Market movers</h2>
       <div className="flex flex-wrap items-center gap-2">
         <Segmented
           label="Time window"
@@ -411,9 +416,23 @@ function MoversView({
 
       {loading && <GridSkeleton count={8} className="mt-6" />}
       {!loading && !sections && (
-        <div className="flex justify-center py-16">
-          <EmptyMark icon={failed ? 'info' : 'restock'} />
-        </div>
+        <EmptyState
+          icon={failed ? 'info' : 'restock'}
+          title={failed ? 'Market data didn’t load' : 'No market data yet'}
+          action={
+            failed && (
+              <Button variant="primary" onClick={retry}>
+                Try again
+              </Button>
+            )
+          }
+        >
+          <p>
+            {failed
+              ? 'Check your connection and try again.'
+              : 'Movers appear once prices have been tracked for a while — check back after the next refresh.'}
+          </p>
+        </EmptyState>
       )}
 
       {sections && (

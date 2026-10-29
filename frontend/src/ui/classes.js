@@ -37,3 +37,32 @@ export const GRID = 'grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:gri
 // Small all-caps heading of a section in the card modal ("Skill", "Price
 // history").
 export const SECTION_HEADING = 'text-xs font-semibold uppercase tracking-wide text-fg-subtle'
+
+// Heading scale: a view's title (Watchlist, Saved lists, Market movers),
+// a titled block within a view (a Movers list), and a dialog's title.
+export const PAGE_TITLE = 'text-lg font-bold tracking-tight text-fg'
+export const SECTION_TITLE = 'text-base font-semibold text-fg'
+export const DIALOG_TITLE = 'text-xl font-bold leading-tight text-fg'
+
+// An inline panel that opens under a view's header (import, export, deck
+// import). Borders and fill vary by panel, so they're added by the caller.
+export const PANEL = 'mt-3 rounded-lg border p-3 shadow-sm sm:p-4'
+
+// The dimmed page behind a dialog; the caller adds its z-index and layout.
+export const BACKDROP = 'fixed inset-0 animate-fade bg-backdrop'
+
+const PILL_VARIANTS = {
+  // A quiet fact: "Grade 3", "Power 13000".
+  stat: 'bg-surface-2 px-2 py-0.5 font-medium text-fg-muted',
+  // A status with a colored outline; the caller adds the colors.
+  outline: 'border px-2 py-0.5 font-semibold',
+  // A link or button shaped like a pill (Movers' section jumps).
+  link: 'min-h-8 shrink-0 gap-1.5 border border-line-strong bg-surface px-3 font-medium text-fg shadow-sm transition hover:border-accent hover:text-accent',
+  // An active filter, with room for its remove button (RemovablePill).
+  filter: 'gap-0.5 border border-line-strong bg-surface py-0.5 pl-2.5 pr-0.5 font-medium text-fg',
+}
+
+/** @param {'stat' | 'outline' | 'link' | 'filter'} variant */
+export function pillClass(variant) {
+  return `inline-flex items-center gap-1 rounded-full text-xs ${PILL_VARIANTS[variant]}`
+}

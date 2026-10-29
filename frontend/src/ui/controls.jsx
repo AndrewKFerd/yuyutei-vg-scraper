@@ -23,7 +23,8 @@ export const Button = forwardRef(function Button(
 })
 
 const ICON_BUTTON_SIZES = {
-  sm: ['h-8 w-8', 'h-4 w-4'],
+  // Small on a mouse; a finger gets the full 40px.
+  sm: ['h-8 w-8 pointer-coarse:h-10 pointer-coarse:w-10', 'h-4 w-4'],
   md: ['h-10 w-10', 'h-5 w-5'],
   lg: ['h-11 w-11', 'h-5 w-5'],
 }
@@ -33,11 +34,18 @@ const ICON_BUTTON_SIZES = {
  *   icon: string,
  *   label: string,
  *   size?: 'sm' | 'md' | 'lg',
- *   variant?: 'ghost' | 'outline',
+ *   variant?: 'ghost' | 'outline' | 'onDark',
  *   type?: 'button' | 'submit' | 'reset',
  *   [dataAttribute: `data-${string}`]: unknown,
  * }} IconButtonProps
  */
+
+const ICON_BUTTON_LOOKS = {
+  ghost: 'text-fg-muted hover:bg-surface-2 hover:text-fg',
+  outline: 'border border-line-strong bg-surface text-fg-muted shadow-sm hover:border-accent hover:text-accent',
+  // On the banner's navy artwork, whatever the theme.
+  onDark: 'text-white/80 hover:bg-white/10 hover:text-white',
+}
 
 /** Round, icon-only button; `label` is its accessible name and tooltip. */
 export const IconButton = forwardRef(function IconButton(
@@ -45,10 +53,7 @@ export const IconButton = forwardRef(function IconButton(
   /** @type {import('react').ForwardedRef<HTMLButtonElement>} */ ref
 ) {
   const [box, glyph] = ICON_BUTTON_SIZES[size]
-  const look =
-    variant === 'outline'
-      ? 'border border-line-strong bg-surface text-fg-muted shadow-sm hover:border-accent hover:text-accent'
-      : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
+  const look = ICON_BUTTON_LOOKS[variant]
   return (
     <button
       ref={ref}

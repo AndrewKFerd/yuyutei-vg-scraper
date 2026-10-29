@@ -61,6 +61,30 @@ const PATHS = {
     </>
   ),
   moon: <path d="M16 12.6A6.5 6.5 0 017.4 4a6.5 6.5 0 108.6 8.6z" />,
+  // A small round bell (the kind on a ribbon), for watching a card.
+  bell: (
+    <>
+      <path d="M5 13.5h10c-.9-1-1.4-2.4-1.4-4V8.6a3.6 3.6 0 00-7.2 0v.9c0 1.6-.5 3-1.4 4z" />
+      <path d="M8.4 15.8a1.7 1.7 0 003.2 0M10 3.2V5" />
+    </>
+  ),
+  // A paw print: the watchlist's empty state and the banner's trail.
+  paw: (
+    <>
+      <path d="M10 10.5c-2.3 0-4.2 2-4.2 3.9 0 1.2.9 1.9 2 1.9.9 0 1.4-.4 2.2-.4s1.3.4 2.2.4c1.1 0 2-.7 2-1.9 0-1.9-1.9-3.9-4.2-3.9z" />
+      <circle cx="5.2" cy="8.6" r="1.4" />
+      <circle cx="8.1" cy="5.6" r="1.4" />
+      <circle cx="11.9" cy="5.6" r="1.4" />
+      <circle cx="14.8" cy="8.6" r="1.4" />
+    </>
+  ),
+  // A monitor: the theme follows the device.
+  system: (
+    <>
+      <rect x="3" y="4" width="14" height="9.5" rx="1.5" />
+      <path d="M7.5 16.5h5M10 13.5v3" />
+    </>
+  ),
   table: (
     <>
       <rect x="3.25" y="4" width="13.5" height="12" rx="1.5" />

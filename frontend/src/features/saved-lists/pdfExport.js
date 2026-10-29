@@ -2,6 +2,7 @@ import { formatPrice } from '../../lib/currency'
 import { derivedImageUrl } from '../../lib/catalogFormat'
 import { formatDate, formatPctMagnitude, pctChange } from '../../lib/format'
 import { imageUrl2x, imageUrlHd } from '../../lib/images'
+import { BRAND_700, GOLD, GOLD_900, PAPER_INK } from '../../ui/palette'
 import { itemName } from './savedListsData'
 
 // A saved list as a PDF, built in the browser: four cards to an A4 page,
@@ -40,30 +41,20 @@ const LOGO_URL = '/favicon.svg'
 
 // The light theme's tokens (index.css), whatever theme the page is in: a
 // PDF is for paper.
-const INK = {
-  fg: '#0f172a',
-  muted: '#475569',
-  subtle: '#64748b',
-  line: '#e2e8f0',
-  fill: '#f1f5f9',
-  accent: 'hsl(212 68% 44%)',
-  positive: '#15803d',
-  negative: '#b91c1c',
-  warning: '#b45309',
-}
+const INK = PAPER_INK
 
 // RarityBadge's colours, as [background, text].
 const RARITY_INK = {
-  SEC: ['#eecf99', 'hsl(38 48% 30%)'],
-  SP: ['#eecf99', 'hsl(38 48% 30%)'],
-  FFR: ['#7e22ce', '#fff'],
-  SR: ['#7e22ce', '#fff'],
-  RRR: ['#be185d', '#fff'],
-  RR: ['hsl(212 68% 44%)', '#fff'],
-  R: ['#15803d', '#fff'],
-  C: ['#cbd5e1', '#1e293b'],
+  SEC: [GOLD, GOLD_900],
+  SP: [GOLD, GOLD_900],
+  FFR: ['#8200db', '#fff'],
+  SR: ['#8200db', '#fff'],
+  RRR: ['#c6005c', '#fff'],
+  RR: [BRAND_700, '#fff'],
+  R: ['#008236', '#fff'],
+  C: ['#cad5e2', '#1d293d'],
 }
-const RARITY_DEFAULT = ['#e2e8f0', '#1e293b']
+const RARITY_DEFAULT = ['#e2e8f0', '#1d293d']
 
 // --- images ------------------------------------------------------------------
 

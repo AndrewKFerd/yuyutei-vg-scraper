@@ -4,7 +4,7 @@ import CardGrid, { GridSkeleton } from '../../ui/CardGrid'
 import RaritySections from './RaritySections'
 import Pagination from './Pagination'
 import Icon from '../../ui/icons'
-import { EmptyMark } from '../../ui/Logo'
+import EmptyState from '../../ui/EmptyState'
 import { Button, IconButton } from '../../ui/controls'
 import { prefersReducedMotion } from '../../ui/motion'
 import { setLabel } from '../../lib/sets'
@@ -102,6 +102,7 @@ function SearchView({ search, status, hidden, currency, rates, calc, onSelect })
 
   return (
     <div hidden={hidden} className={`${CONTAINER} pt-5`}>
+      <h2 className="sr-only">Search cards</h2>
       <SearchToolbar
         query={search.query}
         onQueryChange={search.setQuery}
@@ -115,7 +116,7 @@ function SearchView({ search, status, hidden, currency, rates, calc, onSelect })
         onSortChange={search.setSort}
       />
 
-      <div ref={resultsRef} className="scroll-mt-4 pb-4 pt-4">
+      <div ref={resultsRef} className="scroll-mt-32 pb-4 pt-4">
         <FilterSummary
           summary={summary}
           set={selectedSet}
@@ -138,23 +139,26 @@ function SearchView({ search, status, hidden, currency, rates, calc, onSelect })
       {status === 'loading' && <GridSkeleton className="pb-10" />}
 
       {status === 'ready' && filteredCards.length === 0 && (
-        <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-16 text-center">
-          <EmptyMark icon="search" />
-          <p className="text-base font-semibold text-fg">{isFiltered ? 'No cards match' : 'The catalog is empty'}</p>
-          {isFiltered && (
-            <>
-              <p className="text-sm text-fg-muted">
-                {[query && `“${query}”`, selectedSet && `in ${setLabel(selectedSet)}`, rarity && `at ${rarity} rarity`]
-                  .filter(Boolean)
-                  .join(' ')}{' '}
-                — try a shorter search or fewer filters.
-              </p>
+        <EmptyState
+          icon="search"
+          title={isFiltered ? 'No cards match' : 'The catalog is empty'}
+          action={
+            isFiltered && (
               <Button variant="primary" onClick={search.clearAll}>
                 Clear search and filters
               </Button>
-            </>
+            )
+          }
+        >
+          {isFiltered && (
+            <p>
+              {[query && `“${query}”`, selectedSet && `in ${setLabel(selectedSet)}`, rarity && `at ${rarity} rarity`]
+                .filter(Boolean)
+                .join(' ')}{' '}
+              — try a shorter search or fewer filters.
+            </p>
           )}
-        </div>
+        </EmptyState>
       )}
 
       {status === 'ready' && isSetSelected && filteredCards.length > 0 && (
@@ -186,7 +190,8 @@ function SearchView({ search, status, hidden, currency, rates, calc, onSelect })
             onSelect={onSelect}
             qtyById={calc.qtyById}
             onToggle={calc.toggle}
-            className="pb-6"
+            // Room under the last row for the floating pager.
+            className={totalPages > 1 ? 'pb-24' : 'pb-6'}
           />
           <Pagination page={page} totalPages={totalPages} onChange={goToPage} />
         </>

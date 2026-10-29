@@ -5,6 +5,7 @@ import RarityFilter from './RarityFilter'
 import SortSelect from './SortSelect'
 import Icon from '../../ui/icons'
 import { Button } from '../../ui/controls'
+import { RemovablePill } from '../../ui/Pill'
 import { setShortLabel } from '../../lib/sets'
 import { SORT_OPTIONS } from '../../lib/sorting'
 
@@ -61,23 +62,6 @@ export function SearchToolbar({
   )
 }
 
-function Chip({ children, onRemove, removeLabel }) {
-  return (
-    <span className="inline-flex items-center gap-0.5 rounded-full border border-line-strong bg-surface py-0.5 pl-2.5 pr-0.5 text-xs font-medium text-fg">
-      {children}
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={removeLabel}
-        title={removeLabel}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-muted transition hover:bg-surface-2 hover:text-fg"
-      >
-        <Icon name="close" className="h-3.5 w-3.5" />
-      </button>
-    </span>
-  )
-}
-
 /**
  * "Showing 1–50 of 1,234 cards" plus one removable chip per active filter
  * and "Clear all", so what's narrowing the grid is always visible -- even
@@ -94,19 +78,19 @@ export function FilterSummary({ summary, set, rarity, sort, query, onClearSet, o
       {(set || rarity || sort !== 'default') && (
         <div className="flex flex-wrap items-center gap-1.5">
           {set && (
-            <Chip onRemove={onClearSet} removeLabel="Remove set filter">
+            <RemovablePill onRemove={onClearSet} removeLabel="Remove set filter">
               Set: {setShortLabel(set)}
-            </Chip>
+            </RemovablePill>
           )}
           {rarity && (
-            <Chip onRemove={onClearRarity} removeLabel="Remove rarity filter">
+            <RemovablePill onRemove={onClearRarity} removeLabel="Remove rarity filter">
               Rarity: {rarity}
-            </Chip>
+            </RemovablePill>
           )}
           {sort !== 'default' && (
-            <Chip onRemove={onClearSort} removeLabel="Reset sort order">
+            <RemovablePill onRemove={onClearSort} removeLabel="Reset sort order">
               {sortLabel}
-            </Chip>
+            </RemovablePill>
           )}
         </div>
       )}

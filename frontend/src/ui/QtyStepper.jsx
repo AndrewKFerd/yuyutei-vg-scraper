@@ -41,7 +41,7 @@ function QtyStepper({ value, onChange, label }) {
           setDraft(null)
           onChange(Math.min(MAX_QTY, Math.max(1, Number(draft) || 1)))
         }}
-        className="w-10 rounded-full border border-transparent bg-transparent py-1 text-center text-sm font-semibold tabular-nums text-fg outline-none [appearance:textfield] focus:border-accent [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        className="w-10 rounded-full border border-transparent bg-transparent py-1 text-center text-sm font-semibold tabular-nums text-fg outline-none [appearance:textfield] focus:border-accent focus:bg-surface focus:ring-4 focus:ring-ring [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
       />
       <button type="button" onClick={() => step(1)} aria-disabled={value >= MAX_QTY} aria-label={`Increase quantity of ${label}`} className={buttonClass}>
         +

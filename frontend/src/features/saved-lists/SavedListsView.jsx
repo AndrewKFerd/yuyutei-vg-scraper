@@ -4,7 +4,8 @@ import DeckImportPanel from '../deck-import/DeckImportPanel'
 import Sheet, { SheetTabs } from './Sheet'
 import { ExportPanel, ImportPanel } from './TransferPanels'
 import Icon from '../../ui/icons'
-import { EmptyMark } from '../../ui/Logo'
+import EmptyState from '../../ui/EmptyState'
+import Notice from '../../ui/Notice'
 import WarningNote, { CatalogErrorNote } from '../../ui/WarningNote'
 import { plural } from '../../lib/format'
 import { Button, IconButton } from '../../ui/controls'
@@ -20,7 +21,7 @@ import {
   readTransferHash,
 } from './listTransfer'
 import { focusSoon } from '../../ui/useDialogFocus'
-import { CONTAINER } from '../../ui/classes'
+import { CONTAINER, PAGE_TITLE } from '../../ui/classes'
 
 // Saved lists, one spreadsheet-style sheet per list (with sheet tabs to
 // switch between them; see Sheet.jsx), next to the loaded catalog's current
@@ -207,7 +208,7 @@ function SavedListsView({
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <h2 id="saved-lists-title" ref={headingRef} tabIndex={-1} className="text-lg font-bold text-fg outline-none">
+          <h2 id="saved-lists-title" ref={headingRef} tabIndex={-1} className={`${PAGE_TITLE} outline-none`}>
             Saved lists
           </h2>
           <p className="text-sm text-fg-muted">
@@ -215,6 +216,8 @@ function SavedListsView({
             another computer, use Export lists.
           </p>
         </div>
+        {/* Save leads; Import deck is the other everyday action; moving lists
+            between browsers (export / import) is occasional, so it's quieter. */}
         <div className="flex flex-wrap items-center gap-2">
           {!saving && (
             <Button ref={saveButtonRef} variant="primary" onClick={() => setSaving(true)} disabled={calcEmpty}>
@@ -225,6 +228,7 @@ function SavedListsView({
           {lists.length > 0 && (
             <Button
               ref={exportButtonRef}
+              variant="ghost"
               aria-expanded={exporting}
               onClick={() => (exporting ? closeExport() : setExporting(true))}
             >
@@ -240,7 +244,7 @@ function SavedListsView({
             <Icon name="layers" className="h-4 w-4" />
             Import deck
           </Button>
-          <Button ref={importButtonRef} onClick={() => fileRef.current?.click()}>
+          <Button ref={importButtonRef} variant="ghost" onClick={() => fileRef.current?.click()}>
             <Icon name="download" className="h-4 w-4" />
             Import lists
           </Button>
@@ -285,11 +289,9 @@ function SavedListsView({
       )}
 
       {importNotice && (
-        <p className="mt-3 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-xs text-fg-muted">
-          <Icon name="check" className="h-4 w-4 shrink-0 text-positive" />
-          <span className="min-w-0 flex-1">{importNotice}</span>
-          <IconButton icon="close" size="sm" label="Dismiss" onClick={() => setImportNotice(null)} />
-        </p>
+        <Notice tone="success" className="mt-3" onDismiss={() => setImportNotice(null)}>
+          {importNotice}
+        </Notice>
       )}
 
       {exporting && lists.length > 0 && (
@@ -362,22 +364,18 @@ function SavedListsView({
           </p>
         </>
       ) : (
-        <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-16 text-center">
-          <EmptyMark icon="table" />
-          <p className="text-base font-semibold text-fg">No saved lists yet</p>
-          <p className="text-sm text-fg-muted">
+        <EmptyState icon="table" title="No saved lists yet">
+          <p>
             {calcEmpty
               ? 'Add cards to your price list with +, then save it here or from the list panel to keep a copy.'
               : 'Save your price list to keep a copy you can check against later prices or load back.'}
           </p>
-          <p className="text-sm text-fg-muted">
-            Have a deck in mind? Import deck reads a Deck Log link or a pasted decklist.
-          </p>
-          <p className="text-sm text-fg-muted">
+          <p>Have a deck in mind? Import deck reads a Deck Log link or a pasted decklist.</p>
+          <p>
             Saved lists on another device? Open Saved lists there and use Export lists to bring them here, or import a
             backup file.
           </p>
-        </div>
+        </EmptyState>
       )}
     </div>
   )

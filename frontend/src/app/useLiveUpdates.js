@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { applyDeltas, fetchDelta, fetchMeta, planCatchUp } from '../data/deltas'
 
 // How often the tab asks /api/meta whether a newer catalog is out. With push
@@ -14,6 +14,7 @@ const RELOAD_RETRY_MS = 5 * 60 * 1000
  * tab is visible, on returning to the tab, and when the pipeline's push hint
  * arrives, then either patches in price/stock deltas or reloads the whole
  * catalog (see planCatchUp). Does nothing until the catalog has loaded.
+ * Returns whether the push channel is connected (the header's "Live").
  *
  * @param {{
  *   ready: boolean,
@@ -24,6 +25,7 @@ const RELOAD_RETRY_MS = 5 * 60 * 1000
  * }} options
  */
 export function useLiveUpdates({ ready, loaded, cards, applyPatch, reloadTo }) {
+  const [live, setLive] = useState(false)
   // The latest values, read by the long-lived check below.
   const latest = useRef({ loaded, cards, applyPatch, reloadTo })
   useEffect(() => {
@@ -95,7 +97,9 @@ export function useLiveUpdates({ ready, loaded, cards, applyPatch, reloadTo }) {
           onUpdated: check,
           onStatus: (connected) => {
             pushConnected = connected
-            if (!cancelled) schedule()
+            if (cancelled) return
+            setLive(connected)
+            schedule()
           },
         })
       )
@@ -114,6 +118,9 @@ export function useLiveUpdates({ ready, loaded, cards, applyPatch, reloadTo }) {
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', onVisible)
       disconnect?.()
+      setLive(false)
     }
   }, [ready])
+
+  return live
 }

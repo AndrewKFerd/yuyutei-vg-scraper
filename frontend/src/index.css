@@ -5,15 +5,29 @@
    so the user can override their system preference. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Brand palette: "brand" (blue, #5195E1 at 500) is the primary interactive
-   color; "gold" (cream/gold, #eecf99 at 500) is the accent used for skill
-   text, the logo and top rarities. Both ramps share the base hex's
-   hue/saturation.
+/* Brand palette, blue and gold:
+     "brand"  blue (#5195E1 at 500), the primary interactive color: links,
+              prices, selected states, buttons. Also Reglush Lionheart's
+              blue bow.
+     "gold"   cream gold (#eecf99 at 500), the second accent after her
+              blonde mane and golden bell: the logo, the banner, skill text,
+              watch marks, "live" and the top rarities (SEC/SP). Never on a
+              price, a change or a stock count -- those keep the semantic
+              positive/negative colors.
+   Each ramp keeps its base hex's hue. src/ui/palette.js mirrors the hexes
+   for code that can't read CSS (logo, banner, PDF export, theme-color).
 
    "night" is the dark-mode surface ramp: near-black with the brand blue's
    hue (212) baked in, so dark surfaces read as deep navy rather than
    neutral gray and the blue/gold foreground colors sit naturally on them. */
 @theme {
+  /* System fonts only (the CSP allows no font hosts), with Japanese faces
+     ahead of the generic fallback so card names and skill text don't land
+     in whatever the OS picks for lang="ja". */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Noto Sans JP", Meiryo, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
   --color-night-950: hsl(212 42% 5%);
   --color-night-900: hsl(212 36% 8%);
   --color-night-800: hsl(212 30% 12%);
@@ -55,38 +69,67 @@
      line       dividers and card borders; line-strong: control borders
      fg         primary text            fg-muted   secondary text
      fg-subtle  footnotes, captions, axis labels (on bg/surface only)
-     accent     links, prices, selected states (text)
+     accent     links, prices, selected states (text)      -- blue
      accent-solid / on-accent   filled primary buttons and their text
-     positive / negative / warning   price up / down, stock warnings
-     highlight / highlight-line      the gold skill-text and notice boxes
+     accent-2   the second accent (text): watch marks, "live"  -- gold
+     accent-2-solid / on-accent-2   filled badges in the second accent
+     accent-2-soft / accent-2-line  its tinted fill and border
+     positive / negative / warning   price up / down, stock warnings (text)
+     *-solid    the same, as fills behind white text (chips over card art)
+     *-soft     the same, as quiet fills behind their own text color
+     highlight / highlight-line      skill text and "attention" strips
+     backdrop   dimmed page behind dialogs
+     overlay / on-overlay            dark scrims over card art, and their text
+     chart-*    price-history stock bars, sold-out bars and gaps
+     logo       the mark's card
 
-   Dark mode keeps gold as an accent (skill text, logo, top rarities) and
-   uses a warm off-white for text, so hierarchy comes from three distinct
-   tones instead of one gold at five opacities.
+   Negative is an orange-red (hue 10), so a falling price reads as red and
+   never as the gold accent. line-strong clears
+   3:1 against bg/surface (control borders are non-text UI). Dark mode uses a
+   warm off-white for text, so hierarchy comes from three distinct tones.
+   test/theme-contrast.test.js checks these pairs.
 
    Shape: controls (inputs, selects, buttons, segmented groups) are
    rounded-full; cards, popovers and tiles rounded-lg; dialogs and sheets
    rounded-xl; badges and chips rounded. */
 :root {
-  --bg: var(--color-slate-50);
-  --surface: #fff;
-  --surface-2: var(--color-slate-100);
-  --line: var(--color-slate-200);
-  --line-strong: var(--color-slate-300);
+  --bg: hsl(214 26% 91%);
+  --surface: hsl(214 30% 96.5%);
+  --surface-2: hsl(214 24% 88%);
+  --line: hsl(214 18% 82%);
+  --line-strong: hsl(215 14% 52%);
   --fg: var(--color-slate-900);
   --fg-muted: var(--color-slate-600);
-  --fg-subtle: var(--color-slate-500);
-  --accent: var(--color-brand-700);
+  --fg-subtle: hsl(215 16% 40%);
+  --accent: hsl(212 68% 40%);
   --accent-solid: var(--color-brand-700);
   --accent-solid-hover: var(--color-brand-800);
   --on-accent: #fff;
-  --accent-soft: var(--color-brand-50);
+  --accent-soft: hsl(212 60% 94%);
   --ring: var(--color-brand-200);
-  --positive: var(--color-green-700);
-  --negative: var(--color-red-700);
-  --warning: var(--color-amber-700);
+  --accent-2: var(--color-gold-900);
+  --accent-2-solid: var(--color-gold-500);
+  --accent-2-solid-hover: var(--color-gold-400);
+  --on-accent-2: var(--color-gold-900);
+  --accent-2-soft: var(--color-gold-100);
+  --accent-2-line: var(--color-gold-300);
+  --positive: var(--color-green-800);
+  --negative: hsl(10 80% 40%);
+  --warning: var(--color-amber-800);
+  --positive-solid: var(--color-green-700);
+  --negative-solid: hsl(10 80% 40%);
+  --positive-soft: var(--color-green-50);
+  --negative-soft: hsl(10 90% 95%);
+  --warning-soft: var(--color-amber-50);
+  --warning-line: var(--color-amber-300);
   --highlight: var(--color-gold-50);
   --highlight-line: var(--color-gold-300);
+  --backdrop: color-mix(in oklab, var(--color-slate-900) 55%, transparent);
+  --overlay: color-mix(in oklab, var(--color-night-950) 72%, transparent);
+  --on-overlay: #fff;
+  --chart-stock: var(--color-brand-200);
+  --chart-soldout: hsl(10 85% 64% / 0.8);
+  --chart-gap: color-mix(in oklab, var(--color-slate-400) 45%, transparent);
   --logo: var(--color-gold-500);
 }
 
@@ -95,7 +138,7 @@
   --surface: var(--color-night-800);
   --surface-2: var(--color-night-700);
   --line: var(--color-night-600);
-  --line-strong: var(--color-night-600);
+  --line-strong: hsl(212 14% 46%);
   --fg: hsl(40 30% 91%);
   --fg-muted: hsl(212 18% 74%);
   --fg-subtle: hsl(212 13% 62%);
@@ -105,11 +148,29 @@
   --on-accent: var(--color-night-950);
   --accent-soft: var(--color-night-700);
   --ring: hsl(212 73% 67% / 0.3);
+  --accent-2: var(--color-gold-500);
+  --accent-2-solid: var(--color-gold-500);
+  --accent-2-solid-hover: var(--color-gold-400);
+  --on-accent-2: var(--color-night-950);
+  --accent-2-soft: hsl(38 28% 15%);
+  --accent-2-line: hsl(38 55% 52% / 0.5);
   --positive: var(--color-green-400);
-  --negative: var(--color-red-400);
+  --negative: hsl(10 85% 64%);
   --warning: var(--color-amber-400);
+  --positive-solid: var(--color-green-700);
+  --negative-solid: hsl(10 80% 40%);
+  --positive-soft: color-mix(in oklab, var(--color-green-500) 15%, var(--color-night-800));
+  --negative-soft: color-mix(in oklab, hsl(10 85% 55%) 15%, var(--color-night-800));
+  --warning-soft: var(--color-night-700);
+  --warning-line: color-mix(in oklab, var(--color-amber-400) 45%, transparent);
   --highlight: var(--color-night-700);
   --highlight-line: hsl(38 55% 52% / 0.5);
+  --backdrop: color-mix(in oklab, var(--color-night-950) 75%, transparent);
+  --overlay: color-mix(in oklab, var(--color-night-950) 72%, transparent);
+  --on-overlay: #fff;
+  --chart-stock: color-mix(in oklab, var(--color-brand-800) 70%, transparent);
+  --chart-soldout: hsl(10 80% 55% / 0.7);
+  --chart-gap: color-mix(in oklab, var(--color-slate-400) 25%, transparent);
   --logo: var(--color-gold-500);
 }
 
@@ -128,17 +189,48 @@
   --color-on-accent: var(--on-accent);
   --color-accent-soft: var(--accent-soft);
   --color-ring: var(--ring);
+  --color-accent-2: var(--accent-2);
+  --color-accent-2-solid: var(--accent-2-solid);
+  --color-accent-2-solid-hover: var(--accent-2-solid-hover);
+  --color-on-accent-2: var(--on-accent-2);
+  --color-accent-2-soft: var(--accent-2-soft);
+  --color-accent-2-line: var(--accent-2-line);
   --color-positive: var(--positive);
   --color-negative: var(--negative);
   --color-warning: var(--warning);
+  --color-positive-solid: var(--positive-solid);
+  --color-negative-solid: var(--negative-solid);
+  --color-positive-soft: var(--positive-soft);
+  --color-negative-soft: var(--negative-soft);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-line: var(--warning-line);
   --color-highlight: var(--highlight);
   --color-highlight-line: var(--highlight-line);
+  --color-backdrop: var(--backdrop);
+  --color-overlay: var(--overlay);
+  --color-on-overlay: var(--on-overlay);
+  --color-chart-stock: var(--chart-stock);
+  --color-chart-soldout: var(--chart-soldout);
+  --color-chart-gap: var(--chart-gap);
   --color-logo: var(--logo);
+}
+
+/* Blue into gold: a thin stripe along the sticky bar's bottom edge. */
+.brand-stripe {
+  background-image: linear-gradient(90deg, var(--color-brand-500), var(--color-gold-500));
 }
 
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Reserve the scrollbar's room, so locking scroll under a dialog doesn't
+     shift the page sideways. */
+  scrollbar-gutter: stable;
+}
+
+/* While a dialog is open (ui/useScrollLock.js). */
+html.scroll-locked {
+  overflow: hidden;
 }
 
 body {
@@ -153,6 +245,13 @@ body {
    (select popups, scrollbars) follow the theme instead of flashing white. */
 html.dark {
   color-scheme: dark;
+}
+
+/* Set for a moment while the theme changes (ui/theme.js), so every
+   color swaps at once instead of each control fading at its own speed. */
+.theme-switching,
+.theme-switching * {
+  transition: none !important;
 }
 
 /* Visible keyboard focus everywhere, in one place. Mouse clicks don't show
@@ -269,4 +368,10 @@ html.dark {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* A row that scrolls sideways (Movers' jumps, the sheet tabs): its right
+   edge fades out, so a cut-off item reads as "more this way". */
+.scroll-fade-x {
+  mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
 }

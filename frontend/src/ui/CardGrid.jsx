@@ -1,16 +1,21 @@
 import { useCallback } from 'react'
 import CardTile from './CardTile'
 import { GRID } from './classes'
+import { useGridKeys } from './useGridKeys'
 
 // `onSelect(card, list)`: the list is what the card modal steps through
 // with its previous/next buttons -- the cards shown alongside this one.
+// Arrow keys move between the tiles (useGridKeys).
 function CardGrid({ cards, currency, rates, onSelect, qtyById, onToggle, className = '' }) {
   const select = useCallback((card) => onSelect(card, cards), [onSelect, cards])
+  const { active, gridProps } = useGridKeys(cards.length)
   return (
-    <div className={`${GRID} ${className}`}>
-      {cards.map((card) => (
+    <div className={`${GRID} ${className}`} {...gridProps}>
+      {cards.map((card, i) => (
         <CardTile
           key={card.id}
+          index={i}
+          tabIndex={i === active ? 0 : -1}
           card={card}
           currency={currency}
           rates={rates}

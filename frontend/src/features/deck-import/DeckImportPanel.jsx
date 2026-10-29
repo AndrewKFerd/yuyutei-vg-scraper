@@ -7,7 +7,8 @@ import { Button, Segmented, Select } from '../../ui/controls'
 import { formatPrice } from '../../lib/currency'
 import { plural } from '../../lib/format'
 import { stockInfo } from '../../lib/stock'
-import { FIELD } from '../../ui/classes'
+import Notice from '../../ui/Notice'
+import { FIELD, PANEL } from '../../ui/classes'
 import { focusSoon } from '../../ui/useDialogFocus'
 import { readDeckInput } from './deckText'
 import { buildDeckIndex, planDeck, shortCards } from './deckMatch'
@@ -20,7 +21,6 @@ import { saveResultText } from '../saved-lists/useSavedLists'
 // list, save as a list, or watch the ones that are sold out. Matching is
 // in deckMatch.js, reading the paste in deckText.js.
 
-const PANEL = 'mt-3 rounded-lg border border-line bg-surface p-3 shadow-sm sm:p-4'
 const PLACEHOLDER = `Deck Log link or code, e.g. https://decklog.bushiroad.com/view/A7G1
 — or a decklist, one card per line:
 4 D-BT01/001 Blaster Blade
@@ -235,7 +235,7 @@ function DeckImportPanel({
       onKeyDown={(e) => {
         if (e.key === 'Escape' && !e.defaultPrevented) onClose()
       }}
-      className={PANEL}
+      className={`${PANEL} border-line bg-surface`}
     >
       <PanelHeading
         id="deck-import-title"
@@ -342,10 +342,7 @@ function DeckImportPanel({
           )}
 
           {notice && (
-            <p className="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-xs text-fg">
-              <Icon name="check" className="h-4 w-4 shrink-0 text-positive" />
-              <span className="min-w-0 flex-1">{notice}</span>
-            </p>
+            <Notice tone="success">{notice}</Notice>
           )}
 
           {saving ? (
@@ -368,7 +365,7 @@ function DeckImportPanel({
               </Button>
               {missing.length > 0 && (
                 <Button onClick={watchMissing}>
-                  <Icon name="eye" className="h-4 w-4" />
+                  <Icon name="bell" className="h-4 w-4" />
                   Watch {plural(missing.length, 'sold-out card', 'sold-out cards')}
                 </Button>
               )}

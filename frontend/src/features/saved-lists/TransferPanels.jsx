@@ -4,7 +4,7 @@ import { Button, IconButton, Segmented } from '../../ui/controls'
 import { download } from '../../ui/download'
 import PanelHeading from '../../ui/PanelHeading'
 import { plural } from '../../lib/format'
-import { FIELD } from '../../ui/classes'
+import { FIELD, PANEL } from '../../ui/classes'
 import { MAX_LISTS } from './savedListsData'
 import { backupFileText, countPlan, needsNames, planImport, transferErrorText, transferLink } from './listTransfer'
 
@@ -17,7 +17,6 @@ import { backupFileText, countPlan, needsNames, planImport, transferErrorText, t
 // to scan off a screen. That's about 1 KB of link: 45 catalog cards take
 // under 500 characters.
 const QR_MAX_VERSION = 22
-const PANEL = 'mt-3 rounded-lg border p-3 shadow-sm sm:p-4'
 
 // "2026-10-24" in the viewer's own time zone, for backup file names.
 function localDate(now = new Date()) {

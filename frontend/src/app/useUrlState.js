@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { DEFAULT_MOVER_WINDOW, MOVER_WINDOWS } from '../data/history'
 import { isTransferHash } from '../features/saved-lists/listTransfer'
 import { SORT_OPTIONS } from '../lib/sorting'
+import { historyAction } from '../lib/navigation'
 
 // Shareable URL state, no router dependency. Search view: ?q= (text),
 // &set=<slug>, &rarity=, &sort= and &page= (defaults left out). Movers:
@@ -37,14 +38,54 @@ export function readUrlState() {
 
 /**
  * Mirrors the view, its filters and the open card into the URL so it can be
- * shared or reloaded. Uses replaceState (no history entries, no re-render,
- * so no loop), and keeps any other params plus the path and hash untouched.
+ * shared or reloaded, and keeps any other params plus the path and hash
+ * untouched. A new view or an opened card gets its own history entry
+ * (historyAction); everything else replaces the current one. Back/Forward
+ * hand the entry's view and card to `onNavigate(urlState)`.
  * `page` is left out when the results aren't paged (a set is picked);
  * while the catalog is still loading (`catalogLoading`), a pending ?card=
  * is left alone.
  */
-export function useUrlSync({ view, moversWindow, moversNation, query, setSlug, rarity, sort, page, paged, cardId, catalogLoading }) {
+export function useUrlSync({
+  view,
+  moversWindow,
+  moversNation,
+  query,
+  setSlug,
+  rarity,
+  sort,
+  page,
+  paged,
+  cardId,
+  catalogLoading,
+  onNavigate,
+}) {
+  // What the current history entry shows, to tell a step from an edit.
+  const shown = useRef({ view, cardId: cardId || readUrlState().cardId })
+  const navigate = useRef(onNavigate)
   useEffect(() => {
+    navigate.current = onNavigate
+  })
+
+  useEffect(() => {
+    const onPopState = () => {
+      const state = readUrlState()
+      // Already in the entry: the re-render this causes must not push again.
+      shown.current = { view: state.view, cardId: state.cardId }
+      navigate.current?.(state)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  useEffect(() => {
+    const action = historyAction(shown.current, { view, cardId }, window.history.state)
+    shown.current = { view, cardId }
+    if (action === 'back') {
+      window.history.back()
+      return
+    }
+
     const params = new URLSearchParams(window.location.search)
     const put = (key, value) => (value ? params.set(key, value) : params.delete(key))
     const search = view === 'search'
@@ -64,7 +105,9 @@ export function useUrlSync({ view, moversWindow, moversNation, query, setSlug, r
     const next = params.toString().replace(/%2F/gi, '/')
     const { pathname, search: current, hash } = window.location
     const url = `${pathname}${next ? `?${next}` : ''}${hash}`
-    if (url !== `${pathname}${current}${hash}`) {
+    if (action === 'push') {
+      window.history.pushState({ cardOverlay: Boolean(cardId) }, '', url)
+    } else if (url !== `${pathname}${current}${hash}`) {
       window.history.replaceState(window.history.state, '', url)
     }
   }, [view, moversWindow, moversNation, query, setSlug, rarity, sort, page, paged, cardId, catalogLoading])

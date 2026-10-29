@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { getRates } from './lib/currency'
 import { prefersReducedMotion } from './ui/motion'
-import { applyTheme, getInitialTheme } from './ui/theme'
+import { useTheme } from './app/useTheme'
+import { bannerImageUrls } from './lib/banner'
 import { useCalculator } from './features/calculator/useCalculator'
 import { useCatalog } from './app/useCatalog'
 import { useLiveUpdates } from './app/useLiveUpdates'
@@ -11,7 +12,7 @@ import { useSearch } from './features/search/useSearch'
 import { useWatchlist } from './features/watchlist/useWatchlist'
 import { readUrlState, useUrlSync } from './app/useUrlState'
 import Header from './app/Header'
-import { EmptyMark } from './ui/Logo'
+import EmptyState from './ui/EmptyState'
 import SearchView from './features/search/SearchView'
 import CardModal from './features/card/CardModal'
 import CalculatorBar, { CalculatorPanel } from './features/calculator/CalculatorBar'
@@ -35,7 +36,7 @@ function App() {
   // (null when it was opened from somewhere without one, e.g. a link).
   const [selection, setSelection] = useState({ card: null, list: null })
   const selectedCard = selection.card
-  const [theme, setTheme] = useState(getInitialTheme)
+  const theme = useTheme()
   const [view, setView] = useState(initialUrl.view) // 'search' | 'movers' | 'lists' | 'watchlist'
   // The header's view switcher: a short cross-fade where the browser has
   // view transitions (styles in index.css), an instant switch otherwise.
@@ -48,16 +49,6 @@ function App() {
   const [moversNation, setMoversNation] = useState(initialUrl.moversNation) // '' = all nations
   // A ?card= deep link waits here until the catalog has loaded.
   const pendingCardIdRef = useRef(initialUrl.cardId)
-
-  // index.html already applied the initial theme before first paint; this
-  // keeps <html> in sync whenever the user toggles it afterwards.
-  useEffect(() => {
-    applyTheme(theme)
-  }, [theme])
-
-  const toggleTheme = useCallback(() => {
-    setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
-  }, [])
 
   // Stable identities: CardModal's keydown/scroll-lock effect depends on
   // closeModal, and the tiles' memo on selectCard -- an inline arrow would
@@ -91,13 +82,16 @@ function App() {
   const catalog = useCatalog({ onLoaded: openDeepLink, onRefreshed: swapInFreshCards })
   const { cards, cardsById, meta, status } = catalog
   // Picks up newer prices within about a minute (or at once, with push): deltas when possible, a reload otherwise.
-  useLiveUpdates({
+  const live = useLiveUpdates({
     ready: status === 'ready',
     loaded: meta,
     cards,
     applyPatch: catalog.applyPatch,
     reloadTo: catalog.reloadTo,
   })
+
+  // The banner's card wall, from the loaded catalog (empty until then).
+  const bannerUrls = useMemo(() => bannerImageUrls(cards), [cards])
 
   const search = useSearch({ initial: initialUrl, cards, catalogSets: catalog.sets, catalogReady: status === 'ready' })
 
@@ -167,7 +161,7 @@ function App() {
     document.title = watchlist.newsCount > 0 ? `(${watchlist.newsCount}) ${baseTitle}` : baseTitle
   }, [watchlist.newsCount, baseTitle])
 
-  // Room for the sticky calculator bar so Pagination/Footer stay reachable.
+  // Whether the sticky price-list bar is up (it reserves room under the page).
   const calcBarVisible = calc.items.length > 0 || Boolean(calc.undoInfo) || calcOpen
 
   useUrlSync({
@@ -182,6 +176,17 @@ function App() {
     paged: !search.isSetSelected,
     cardId: selectedCard?.id || null,
     catalogLoading: status === 'loading',
+    // Back/Forward: show that entry's view and card (a card id the catalog
+    // doesn't hold leaves the modal as it is).
+    onNavigate: (state) => {
+      setView(state.view)
+      setSelection((prev) => {
+        if (!state.cardId) return prev.card ? { card: null, list: null } : prev
+        if (prev.card?.id === state.cardId) return prev
+        const card = cardsById.get(state.cardId)
+        return card ? { card, list: null } : prev
+      })
+    },
   })
 
   // Previous/next in the card modal: neighbours in the list it was opened from.
@@ -203,12 +208,24 @@ function App() {
     selectionIndex >= 0 ? { index: selectionIndex, total: selection.list.length } : null
 
   return (
-    <div className={`flex min-h-screen flex-col bg-bg ${calcBarVisible ? 'pb-28' : ''}`}>
+    <div
+      className="flex min-h-screen flex-col bg-bg"
+      // Room under the content for the sticky price-list bar, measured by
+      // CalculatorBar (--calc-bar-h), so Pagination/Footer stay reachable.
+      style={calcBarVisible ? { paddingBottom: 'calc(var(--calc-bar-h, 7rem) + 0.5rem)' } : undefined}
+    >
+      <a
+        href="#main"
+        className="sr-only z-50 rounded-full bg-accent-solid px-4 py-2 text-sm font-semibold text-on-accent focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
+      >
+        Skip to content
+      </a>
       <Header
         meta={meta}
+        live={live}
+        bannerUrls={bannerUrls}
         busy={status === 'loading' || catalog.isRefreshing}
         theme={theme}
-        onToggleTheme={toggleTheme}
         view={view}
         onViewChange={changeView}
         watchNews={watchlist.newsCount}
@@ -219,7 +236,7 @@ function App() {
         refreshError={catalog.refreshError}
       />
 
-      <main className="flex-1">
+      <main id="main" tabIndex={-1} className="flex-1 scroll-mt-32 outline-none">
         <SearchView
           search={search}
           status={status}
@@ -286,15 +303,19 @@ function App() {
         )}
 
         {status === 'error' && view !== 'lists' && view !== 'watchlist' && (
-          <div role="alert" className="mx-auto flex max-w-md flex-col items-center gap-3 px-4 py-16 text-center">
-            <EmptyMark icon="info" />
-            <p className="text-base font-semibold text-fg">Couldn’t load the card catalog</p>
-            <p className="text-sm text-fg-muted">{catalog.errorMessage}</p>
-            <Button variant="primary" onClick={catalog.retry}>
-              <Icon name="refresh" className="h-4 w-4" />
-              Try again
-            </Button>
-          </div>
+          <EmptyState
+            role="alert"
+            icon="info"
+            title="Couldn’t load the card catalog"
+            action={
+              <Button variant="primary" onClick={catalog.retry}>
+                <Icon name="refresh" className="h-4 w-4" />
+                Try again
+              </Button>
+            }
+          >
+            <p>{catalog.errorMessage}</p>
+          </EmptyState>
         )}
       </main>
 
@@ -339,7 +360,6 @@ function App() {
           onClose={closeCalc}
           onOpenCard={selectCard}
           onOpenSavedLists={openSavedLists}
-          suspended={Boolean(selectedCard)}
           returnFocusRef={calcButtonRef}
         />
       )}

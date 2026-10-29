@@ -15,13 +15,17 @@ import { stockInfo } from '../lib/stock'
 // `selectedQty` (0 = not in the price list) and `onToggle` drive the round
 // add/remove button over the art. Pass a number and a stable callback, never
 // the calculator's Map: either would re-render every tile on each toggle.
+//
+// `index` and `tabIndex` are for the grid's arrow-key movement
+// (ui/useGridKeys.js): only the active tile's two buttons are Tab stops.
 /**
  * @param {{ card: import('../lib/types.js').Card, currency: string, rates: object | null,
  *   onSelect: (card: import('../lib/types.js').Card) => void,
  *   delta?: { from: number, to: number, period?: string } | null, caption?: string,
- *   selectedQty?: number, onToggle: (card: import('../lib/types.js').Card) => void }} props
+ *   selectedQty?: number, onToggle: (card: import('../lib/types.js').Card) => void,
+ *   index?: number, tabIndex?: number }} props
  */
-function CardTile({ card, currency, rates, onSelect, delta, caption, selectedQty = 0, onToggle }) {
+function CardTile({ card, currency, rates, onSelect, delta, caption, selectedQty = 0, onToggle, index, tabIndex = 0 }) {
   const { inStock, label: stockLabel } = stockInfo(card.stock)
   const chip =
     delta !== undefined ? delta : card.chg7d ? { from: card.chg7d.from, to: card.price, period: '7 days' } : null
@@ -45,9 +49,11 @@ function CardTile({ card, currency, rates, onSelect, delta, caption, selectedQty
     // The toggle can't live inside the card's button (nested buttons are
     // invalid), so both sit in this wrapper, which also carries the hover lift
     // so the toggle moves with the card.
-    <div className="group relative transition motion-safe:hover:-translate-y-0.5">
+    <div data-tile={index} className="group relative transition motion-safe:hover:-translate-y-0.5">
       <button
         type="button"
+        data-tile-main
+        tabIndex={tabIndex}
         onClick={() => onSelect(card)}
         title={name}
         className={`flex h-full w-full flex-col overflow-hidden rounded-lg border bg-surface text-left shadow-sm transition hover:shadow-md ${
@@ -80,7 +86,7 @@ function CardTile({ card, currency, rates, onSelect, delta, caption, selectedQty
           {/* pr-10 centers the label in the space left of the price-list
               toggle, which sits over this bar's right end. */}
           {!inStock && (
-            <div className="absolute inset-x-0 bottom-0 bg-black/70 py-1 pl-1 pr-10 text-center text-[10px] font-semibold uppercase tracking-wide text-white">
+            <div className="absolute inset-x-0 bottom-0 bg-overlay py-1 pl-1 pr-10 text-center pointer-coarse:pr-12 text-[11px] font-semibold uppercase tracking-wide text-on-overlay">
               Out of stock
             </div>
           )}
@@ -108,13 +114,15 @@ function CardTile({ card, currency, rates, onSelect, delta, caption, selectedQty
       <div className="pointer-events-none absolute inset-x-px top-px aspect-[100/140]">
         <button
           type="button"
+          data-tile-toggle
+          tabIndex={tabIndex}
           onClick={() => {
             if (!selected) setPops((n) => n + 1)
             onToggle(card)
           }}
           aria-label={toggleLabel}
           title={toggleLabel}
-          className={`pointer-events-auto absolute bottom-1.5 right-1.5 flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold tabular-nums shadow-md transition ${
+          className={`pointer-events-auto absolute bottom-1.5 right-1.5 flex h-8 w-8 items-center pointer-coarse:h-10 pointer-coarse:w-10 justify-center rounded-full text-xs font-bold tabular-nums shadow-md transition ${
             selected
               ? 'bg-accent-solid text-on-accent ring-2 ring-surface'
               : 'bg-surface/90 text-fg ring-1 ring-line-strong hover:bg-surface hover:text-accent'

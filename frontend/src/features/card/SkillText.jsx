@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button } from '../../ui/controls'
+import Skeleton from '../../ui/Skeleton'
 
 // The card modal's skill text: English when there is some, else the
 // Japanese with the translator's Translate toggle (useRulesTranslation).
@@ -48,7 +49,7 @@ function SkillBox({ text, lang, segments }) {
 // `translation`: useRulesTranslation()'s state, for Japanese-only text.
 function SkillText({ card, status, onRetry, translation }) {
   if (status === 'loading') {
-    return <div role="status" aria-label="Loading skill text" className="h-20 animate-pulse rounded-lg bg-surface-2" />
+    return <Skeleton label="Loading skill text" className="h-20 rounded-lg" />
   }
   if (status === 'error') {
     return (

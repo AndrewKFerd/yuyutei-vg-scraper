@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import RarityBadge from '../../ui/RarityBadge'
 import QtyStepper from '../../ui/QtyStepper'
 import SaveListForm from '../saved-lists/SaveListForm'
-import { Button } from '../../ui/controls'
+import { Button, IconButton } from '../../ui/controls'
+import { BACKDROP } from '../../ui/classes'
 import { formatPrice } from '../../lib/currency'
 import { plural } from '../../lib/format'
 import { formatListAsText } from './useCalculator'
 import { defaultListName, saveResultText } from '../saved-lists/useSavedLists'
-import { focusSoon, useDialogFocus } from '../../ui/useDialogFocus'
+import { focusSoon } from '../../ui/useDialogFocus'
+import { useModal } from '../../ui/useModal'
 
 const nameOf = (line) => line.nameEn || line.nameJp || line.setCode || 'card'
 
@@ -56,26 +58,40 @@ function CalculatorBar({ calc, currency, rates, visible, panelOpen, onOpenPanel,
     setBump({ copies: totals.copies, n: totals.copies > bump.copies ? bump.n + 1 : bump.n })
   }
 
+  // The bar's height as --calc-bar-h on <html>, for the room App leaves
+  // under the page (it grows when the label wraps, or with the safe area).
+  const barRef = useRef(null)
+  useEffect(() => {
+    const bar = barRef.current
+    if (!visible || !bar || typeof ResizeObserver === 'undefined') return undefined
+    const root = document.documentElement
+    const observer = new ResizeObserver(() => root.style.setProperty('--calc-bar-h', `${bar.offsetHeight}px`))
+    observer.observe(bar)
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--calc-bar-h')
+    }
+  }, [visible])
+
   return (
     <>
       <p className="sr-only" aria-live="polite">
         {announcement}
       </p>
       {visible && (
-        <div className="fixed inset-x-0 bottom-0 z-40 animate-rise px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div
+          ref={barRef}
+          className="fixed inset-x-0 bottom-0 z-40 animate-rise px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+        >
           <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-xl border border-line bg-surface/95 px-4 py-2.5 shadow-lg backdrop-blur">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-xs text-fg-muted">
                 {undoInfo ? (
                   <>
                     <span className="truncate">{undoInfo.label}</span>
-                    <button
-                      type="button"
-                      onClick={calc.undo}
-                      className="shrink-0 text-xs font-semibold text-accent underline-offset-2 hover:underline"
-                    >
+                    <Button variant="link" size="inline" onClick={calc.undo} className="shrink-0">
                       Undo
-                    </button>
+                    </Button>
                   </>
                 ) : message?.kind === 'full' ? (
                   <span className="truncate font-semibold text-warning">{message.text}</span>
@@ -100,16 +116,16 @@ function CalculatorBar({ calc, currency, rates, visible, panelOpen, onOpenPanel,
                 </div>
               )}
             </div>
-            <button
-                ref={buttonRef}
-                type="button"
-                onClick={onOpenPanel}
-                aria-expanded={panelOpen}
-                aria-controls="calc-panel"
-                className="shrink-0 rounded-full bg-accent-solid px-4 py-2 text-sm font-semibold text-on-accent shadow-sm transition hover:bg-accent-solid-hover"
-              >
-                View list
-              </button>
+            <Button
+              ref={buttonRef}
+              variant="primary"
+              onClick={onOpenPanel}
+              aria-expanded={panelOpen}
+              aria-controls="calc-panel"
+              className="shrink-0"
+            >
+              View list
+            </Button>
           </div>
         </div>
       )}
@@ -167,29 +183,24 @@ function CalcRow({ line, currency, rates, calc, onOpenCard, onRemove }) {
           </p>
         ))}
       </div>
-      <button
-        type="button"
+      <IconButton
+        icon="close"
+        size="sm"
+        label={`Remove ${name}`}
         onClick={onRemove}
         data-remove={line.id}
-        aria-label={`Remove ${name}`}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-fg-muted transition hover:bg-surface-2 hover:text-negative"
-      >
-        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className="h-4 w-4">
-          <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" />
-        </svg>
-      </button>
+        className="hover:text-negative"
+      />
     </li>
   )
 }
 
 /**
  * The full list as a bottom sheet (phones) / floating card (desktop).
- * `suspended` while a card modal is open on top of it: both listen for
- * Escape on the document, so without it one press would close both, and
- * both would trap Tab. `saved` is useSavedLists(), for "Save list";
- * `onOpenSavedLists(listId?)` closes the panel onto the Saved lists view.
+ * `saved` is useSavedLists(), for "Save list"; `onOpenSavedLists(listId?)`
+ * closes the panel onto the Saved lists view.
  */
-export function CalculatorPanel({ calc, saved, currency, rates, onClose, onOpenCard, onOpenSavedLists, suspended, returnFocusRef }) {
+export function CalculatorPanel({ calc, saved, currency, rates, onClose, onOpenCard, onOpenSavedLists, returnFocusRef }) {
   const { lines, totals, undoInfo } = calc
   const sheetRef = useRef(null)
   const saveButtonRef = useRef(null)
@@ -199,27 +210,11 @@ export function CalculatorPanel({ calc, saved, currency, rates, onClose, onOpenC
   const [saveState, setSaveState] = useState(null)
   const copyTimer = useRef(null)
   const total = totalText(totals, currency, rates)
-  useDialogFocus(sheetRef, { open: true, trap: !suspended })
+  // Escape, Tab and the scroll lock; a card modal opened over the panel
+  // takes the first two while it's up.
+  useModal(sheetRef, { onClose })
 
-  useEffect(() => {
-    if (suspended) return
-    const onKey = (e) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [suspended, onClose])
-
-  // Same lock/restore pattern as CardModal, so nested ones unwind in order.
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = previousOverflow
-    }
-  }, [])
-
-  // Declared after useDialogFocus so, on unmount, this runs last and wins:
+  // Declared after useModal so, on unmount, this runs last and wins:
   // some browsers don't focus a button on click, so "whatever had focus
   // before" may not be "View list".
   useEffect(() => {
@@ -281,7 +276,7 @@ export function CalculatorPanel({ calc, saved, currency, rates, onClose, onOpenC
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
-      className="fixed inset-0 z-40 bg-slate-900/50 dark:bg-night-950/70"
+      className={`${BACKDROP} z-40`}
     >
       <div
         ref={sheetRef}
@@ -303,16 +298,7 @@ export function CalculatorPanel({ calc, saved, currency, rates, onClose, onOpenC
             <Button variant="link" size="inline" onClick={() => onOpenSavedLists()}>
               Saved lists
             </Button>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-muted transition hover:bg-surface-2 hover:text-fg"
-            >
-              <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" />
-              </svg>
-            </button>
+            <IconButton icon="close" size="lg" label="Close" onClick={onClose} />
           </span>
         </div>
 
@@ -320,14 +306,9 @@ export function CalculatorPanel({ calc, saved, currency, rates, onClose, onOpenC
           <div className="px-4 py-10 text-center text-sm text-fg-muted">
             <p>Your list is empty.</p>
             {undoInfo && (
-              <button
-                type="button"
-                onClick={undoFromEmpty}
-                data-calc-undo
-                className="mt-2 text-sm font-semibold text-accent underline-offset-2 hover:underline"
-              >
+              <Button variant="link" onClick={undoFromEmpty} data-calc-undo className="mt-2">
                 Undo — {undoInfo.label}
-              </button>
+              </Button>
             )}
           </div>
         ) : (
@@ -381,29 +362,16 @@ export function CalculatorPanel({ calc, saved, currency, rates, onClose, onOpenC
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={copyList}
-                    className="rounded-full bg-accent-solid px-4 py-2 text-sm font-semibold text-on-accent shadow-sm transition hover:bg-accent-solid-hover"
-                  >
+                  <Button variant="primary" onClick={copyList}>
                     {copyState === 'copied' ? 'Copied!' : copyState === 'failed' ? 'Copy failed' : 'Copy list'}
-                  </button>
-                  <button
-                    ref={saveButtonRef}
-                    type="button"
-                    onClick={() => setSaveState('naming')}
-                    className="rounded-full border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-fg shadow-sm transition hover:border-accent hover:text-accent"
-                  >
+                  </Button>
+                  <Button ref={saveButtonRef} onClick={() => setSaveState('naming')}>
                     Save list
-                  </button>
+                  </Button>
                 </span>
-                <button
-                  type="button"
-                  onClick={clearAll}
-                  className="text-sm font-medium text-negative underline-offset-2 hover:underline"
-                >
+                <Button variant="danger" onClick={clearAll}>
                   Clear all
-                </button>
+                </Button>
               </div>
             )}
             {/* Mounted with the footer, so the confirmation is announced;

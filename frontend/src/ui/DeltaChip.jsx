@@ -9,12 +9,12 @@ import { formatPctMagnitude, pctChange } from '../lib/format'
 // "inline" is a soft tint for use next to text (modal footer).
 const STYLES = {
   overlay: {
-    up: 'bg-green-700 text-white shadow-sm',
-    down: 'bg-red-600 text-white shadow-sm',
+    up: 'bg-positive-solid text-white shadow-sm',
+    down: 'bg-negative-solid text-white shadow-sm',
   },
   inline: {
-    up: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-positive',
-    down: 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-negative',
+    up: 'bg-positive-soft text-positive',
+    down: 'bg-negative-soft text-negative',
   },
 }
 
@@ -30,7 +30,7 @@ function DeltaChip({ from, to, period = '7 days', suffix, variant = 'inline' }) 
       role="img"
       aria-label={`${up ? 'Up' : 'Down'} ${magnitude} in ${period}`}
       title={`${up ? 'Up' : 'Down'} ${magnitude} in ${period}`}
-      className={`inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1 py-0.5 text-[10px] font-bold leading-none tabular-nums ${
+      className={`inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1 py-0.5 text-[11px] font-bold leading-none tabular-nums ${
         STYLES[variant][up ? 'up' : 'down']
       }`}
     >

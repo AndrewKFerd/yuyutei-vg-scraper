@@ -1,27 +1,15 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import Icon from '../../ui/icons'
-import { useDialogFocus } from '../../ui/useDialogFocus'
+import { useModal } from '../../ui/useModal'
 
 // Full-screen view of the 500x700 scan. Tap/click anywhere, press Escape or
 // activate the close button to dismiss. Sits above the card modal (z-60 vs
-// 50) and stops propagation so closing it doesn't also close the modal
-// beneath. Owns keyboard focus while open; closing returns it to the
+// 50); as the topmost modal it owns Escape and Tab while open (useModal), so
+// closing it leaves the modal beneath open. Closing returns focus to the
 // "enlarge" button.
 function Lightbox({ src, alt, onClose }) {
   const ref = useRef(null)
-  useDialogFocus(ref, { open: true })
-
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onClose()
-      }
-    }
-    // Capture phase so this runs before the modal's own Escape handler.
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-  }, [onClose])
+  useModal(ref, { onClose })
 
   return (
     <div
@@ -43,7 +31,7 @@ function Lightbox({ src, alt, onClose }) {
         type="button"
         onClick={onClose}
         aria-label="Close full-size image"
-        className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full bg-night-800/80 text-white hover:bg-night-700"
+        className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full bg-overlay text-on-overlay hover:bg-night-700"
       >
         <Icon name="close" />
       </button>

@@ -4,6 +4,7 @@ import { formatDate, formatDateTime } from '../../lib/format'
 import { entryAt } from '../../data/history'
 import { stockInfo } from '../../lib/stock'
 import { Segmented } from '../../ui/controls'
+import { SECTION_HEADING } from '../../ui/classes'
 
 // Hand-rolled inline SVG (no chart library -- the frontend has zero runtime
 // dependencies beyond React, and this is one small step chart).
@@ -193,7 +194,7 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
   return (
     <div>
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+        <h3 className={SECTION_HEADING}>
           Price history
         </h3>
         <Segmented
@@ -262,7 +263,7 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
               <div
                 key={a}
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-y-0 text-slate-400/45 dark:text-slate-400/25"
+                className="pointer-events-none absolute inset-y-0 text-chart-gap"
                 style={{ left: pct(x(a), VB_W), width: pct(x(b) - x(a), VB_W), backgroundImage: GAP_HATCH }}
               />
             ))}
@@ -296,7 +297,7 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
                       y={VB_H - h}
                       width={w - inset * 2}
                       height={h}
-                      className="fill-red-400/80 dark:fill-red-500/70"
+                      className="fill-chart-soldout"
                     />
                   )
                 }
@@ -308,7 +309,7 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
                     y={VB_H - h}
                     width={w - inset * 2}
                     height={h}
-                    className="fill-brand-200 dark:fill-brand-800/70"
+                    className="fill-chart-stock"
                   />
                 )
               })}
@@ -361,13 +362,13 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
         </span>
         {maxStock > 0 && (
           <span className="inline-flex items-center gap-1">
-            <span aria-hidden="true" className="h-2 w-2 rounded-[1px] bg-brand-200 dark:bg-brand-800/70" />
+            <span aria-hidden="true" className="h-2 w-2 rounded-[1px] bg-chart-stock" />
             Stock
           </span>
         )}
         {hasSoldOut && (
           <span className="inline-flex items-center gap-1">
-            <span aria-hidden="true" className="h-1 w-3 rounded-[1px] bg-red-400 dark:bg-red-500/70" />
+            <span aria-hidden="true" className="h-1 w-3 rounded-[1px] bg-chart-soldout" />
             Sold out
           </span>
         )}
@@ -375,7 +376,7 @@ function PriceHistoryChart({ series, coverage, lastRun, currency, rates }) {
           <span className="inline-flex items-center gap-1">
             <span
               aria-hidden="true"
-              className="h-2 w-3 rounded-[1px] text-slate-400/80 ring-1 ring-slate-300 dark:text-slate-400/50 dark:ring-night-600"
+              className="h-2 w-3 rounded-[1px] text-chart-gap ring-1 ring-line-strong"
               style={{ backgroundImage: GAP_HATCH }}
             />
             Not observed

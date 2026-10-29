@@ -11,8 +11,10 @@ import { loadHistory } from '../../data/history'
 import { imageUrl2x, imageUrlHd } from '../../lib/images'
 import { loadSetDetails, reloadSetDetailsIfCached } from '../../data/details'
 import { stockInfo } from '../../lib/stock'
-import { SECTION_HEADING } from '../../ui/classes'
-import { focusSoon, useDialogFocus } from '../../ui/useDialogFocus'
+import { BACKDROP, DIALOG_TITLE, SECTION_HEADING } from '../../ui/classes'
+import { focusSoon } from '../../ui/useDialogFocus'
+import { useModal } from '../../ui/useModal'
+import { Pill } from '../../ui/Pill'
 import { useRulesTranslation } from './useRulesTranslation'
 import QtyStepper from '../../ui/QtyStepper'
 
@@ -27,7 +29,7 @@ function wikiUrl(title) {
 // null/undefined when none had it, in which case the pill isn't rendered.
 function StatPill({ value }) {
   if (value === null || value === undefined || value === '') return null
-  return <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-fg-muted">{value}</span>
+  return <Pill>{value}</Pill>
 }
 
 // Footer control for the price list: add, or (once added) set the quantity
@@ -112,10 +114,11 @@ function CardModal({
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const closeLightbox = useCallback(() => setLightboxOpen(false), [])
   // Focus moves into the dialog on open and back to the tile on close; Tab
-  // stays inside it -- except while the lightbox (its own trap) is open.
+  // and Escape belong to it while it's the topmost modal (not while the
+  // lightbox is open over it); page scroll is locked meanwhile.
   const dialogRef = useRef(null)
   const scrollRef = useRef(null)
-  useDialogFocus(dialogRef, { open: Boolean(card), trap: Boolean(card) && !lightboxOpen })
+  const isTopModal = useModal(dialogRef, { open: Boolean(card), onClose })
   // Which scan the modal thumbnail is showing: start with the 500x700
   // "front" scan; if the CDN doesn't have one for this card, fall back to
   // the 2x thumbnail rather than a broken image.
@@ -193,26 +196,16 @@ function CardModal({
     setDetailTry((n) => n + 1)
   }, [setSlug])
 
-  // Escape closes; ←/→ step to the previous/next card. Page scroll is
-  // locked while the modal is open -- all only while a card is selected.
+  // ←/→ step to the previous/next card, while this is the topmost modal.
   useEffect(() => {
-    if (!card) return
-
+    if (!isTopModal) return undefined
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') onClose()
-      else if (e.key === 'ArrowLeft' && onPrev && !isArrowTargetBusy(e)) onPrev()
+      if (e.key === 'ArrowLeft' && onPrev && !isArrowTargetBusy(e)) onPrev()
       else if (e.key === 'ArrowRight' && onNext && !isArrowTargetBusy(e)) onNext()
     }
     document.addEventListener('keydown', handleKeyDown)
-
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown)
-      document.body.style.overflow = previousOverflow
-    }
-  }, [card, onClose, onPrev, onNext])
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isTopModal, onPrev, onNext])
 
   // Machine translation of Japanese-only rules text, which needs the shard.
   const shardEntry = card && detailState.slug === setSlug && detailState.status === 'ready' ? detailState.cards[card.id] : null
@@ -241,7 +234,7 @@ function CardModal({
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
-      className="fixed inset-0 z-50 flex animate-fade items-center justify-center bg-slate-900/60 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4 dark:bg-night-950/75"
+      className={`${BACKDROP} z-50 flex items-center justify-center p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4`}
     >
       <div
         ref={dialogRef}
@@ -270,7 +263,7 @@ function CardModal({
                 label="Previous card"
                 onClick={() => onPrev?.()}
                 aria-disabled={!onPrev}
-                className="aria-disabled:cursor-default aria-disabled:opacity-30"
+                className="aria-disabled:cursor-default aria-disabled:opacity-40"
               />
               <span className="min-w-16 text-center text-xs tabular-nums text-fg-muted">
                 {(position.index + 1).toLocaleString()} of {position.total.toLocaleString()}
@@ -280,7 +273,7 @@ function CardModal({
                 label="Next card"
                 onClick={() => onNext?.()}
                 aria-disabled={!onNext}
-                className="aria-disabled:cursor-default aria-disabled:opacity-30"
+                className="aria-disabled:cursor-default aria-disabled:opacity-40"
               />
             </>
           ) : (
@@ -294,7 +287,7 @@ function CardModal({
             title={watched ? 'Stop watching this card' : 'Watch this card for restocks and price changes'}
             className={`ml-auto ${watched ? 'border-accent text-accent' : ''}`}
           >
-            <Icon name="eye" className="h-4 w-4" />
+            <Icon name="bell" className="h-4 w-4" />
             {watched ? 'Watching' : 'Watch'}
           </Button>
           <IconButton icon="close" label="Close" onClick={onClose} />
@@ -322,14 +315,14 @@ function CardModal({
             <div className="absolute left-1.5 top-1.5">
               <RarityBadge rarity={card.rarity} />
             </div>
-            <span className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-night-950/70 text-white opacity-80 transition group-hover:opacity-100">
+            <span className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-overlay text-on-overlay opacity-80 transition group-hover:opacity-100">
               <Icon name="expand" className="h-4 w-4" />
             </span>
           </button>
 
           <div className="flex min-w-0 flex-col gap-4">
             <div>
-              <h2 id="card-modal-title" className="text-xl font-bold leading-snug text-fg">
+              <h2 id="card-modal-title" className={DIALOG_TITLE}>
                 {name}
               </h2>
               {card.nameEn && card.nameJp && (

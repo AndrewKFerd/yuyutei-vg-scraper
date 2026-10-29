@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ConfirmBar from './ConfirmBar'
+import Notice from '../../ui/Notice'
 import DeltaChip from '../../ui/DeltaChip'
 import PdfMenu from './PdfMenu'
 import RarityBadge from '../../ui/RarityBadge'
@@ -424,7 +425,7 @@ function Sheet({
             disabled={unwatched.length === 0}
             title={watchAllTitle(catalogCards.length, unwatched.length)}
           >
-            <Icon name="eye" className="h-3.5 w-3.5" />
+            <Icon name="bell" className="h-3.5 w-3.5" />
             {catalogCards.length > 0 && unwatched.length === 0 ? 'All watched' : 'Watch all'}
           </Button>
           <span className="flex items-center gap-1.5">
@@ -470,17 +471,14 @@ function Sheet({
         />
       )}
       {pdfNote && (
-        <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-xs text-fg-muted sm:px-4">
-          <Icon name="info" className="h-4 w-4 shrink-0 text-warning" />
-          <span className="min-w-0 flex-1">{pdfNote}</span>
-          <IconButton icon="close" size="sm" label="Dismiss" onClick={() => pdf.setNote(null)} />
-        </div>
+        <Notice tone="warning" layout="strip" onDismiss={() => pdf.setNote(null)}>
+          {pdfNote}
+        </Notice>
       )}
       {notice && !undoInfo && (
-        <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-xs text-fg-muted sm:px-4">
-          <Icon name="check" className="h-4 w-4 shrink-0 text-positive" />
-          <span className="min-w-0 flex-1">{notice}</span>
-        </div>
+        <Notice tone="success" layout="strip">
+          {notice}
+        </Notice>
       )}
       {undoInfo && (
         <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-xs text-fg-muted sm:px-4">
@@ -641,7 +639,7 @@ export function SheetTabs({ lists, activeId, onChange }) {
   }
 
   return (
-    <div className="overflow-x-auto border-t border-line-strong bg-surface-2 px-2 pb-1.5">
+    <div className="scroll-fade-x overflow-x-auto border-t border-line-strong bg-surface-2 px-2 pb-1.5 pr-8">
       <div role="tablist" aria-label="Saved lists" className="flex gap-0.5">
         {lists.map((list, i) => {
           const selected = list.id === activeId

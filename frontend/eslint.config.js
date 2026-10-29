@@ -38,6 +38,7 @@ export default [
   {
     files: [
       'src/lib/**/*.js',
+      'src/ui/palette.js',
       'src/features/card/translate/**/*.js',
       'src/features/saved-lists/savedListsData.js',
       'src/features/saved-lists/listTransfer.js',

@@ -3,7 +3,8 @@ import RarityBadge from '../../ui/RarityBadge'
 import DeltaChip from '../../ui/DeltaChip'
 import Icon from '../../ui/icons'
 import { CatalogErrorNote } from '../../ui/WarningNote'
-import { EmptyMark } from '../../ui/Logo'
+import EmptyState from '../../ui/EmptyState'
+import { Pill } from '../../ui/Pill'
 import { Button, IconButton } from '../../ui/controls'
 import { formatPrice } from '../../lib/currency'
 import { withCurrent } from '../../lib/catalogFormat'
@@ -12,7 +13,8 @@ import { stockInfo } from '../../lib/stock'
 import { formatDateTime, plural, timeAgo } from '../../lib/format'
 import { describeObservedAt } from '../../data/history'
 import { focusSoon } from '../../ui/useDialogFocus'
-import { CONTAINER, FIELD } from '../../ui/classes'
+import { CONTAINER, FIELD, PAGE_TITLE } from '../../ui/classes'
+import Skeleton from '../../ui/Skeleton'
 
 // The Watchlist view: watched cards, the ones that changed since they were
 // last looked at first, each with what changed -- back in stock, a price
@@ -26,7 +28,7 @@ const yen = (n) => formatPrice(n, 'JPY', null)
 const MAX_EVENTS = 4
 
 const CHIPS = {
-  target: { icon: 'check', text: 'Target reached', className: 'border-highlight-line bg-highlight text-fg' },
+  target: { icon: 'check', text: 'Target reached', className: 'border-accent-2-line bg-accent-2-soft text-accent-2' },
   restocked: { icon: 'restock', text: 'Back in stock', className: 'border-accent text-accent' },
   soldOut: { icon: 'soldOut', text: 'Sold out', className: 'border-line-strong text-negative' },
 }
@@ -35,10 +37,9 @@ function ChangeChip({ kind }) {
   const chip = CHIPS[kind]
   if (!chip) return null
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${chip.className}`}>
-      <Icon name={chip.icon} className="h-3.5 w-3.5" />
+    <Pill variant="outline" icon={chip.icon} className={chip.className}>
       {chip.text}
-    </span>
+    </Pill>
   )
 }
 
@@ -279,14 +280,12 @@ function summaryText(count, newsCount) {
 
 function EmptyWatchlist() {
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-16 text-center">
-      <EmptyMark icon="eye" />
-      <p className="text-base font-semibold text-fg">Nothing watched yet</p>
-      <p className="text-sm text-fg-muted">
+    <EmptyState icon="paw" title="Nothing watched yet">
+      <p>
         Open a card and press Watch, or watch every card in a saved list from its sheet. Come back later to see which
         ones restocked or changed price.
       </p>
-    </div>
+    </EmptyState>
   )
 }
 
@@ -313,7 +312,7 @@ function WatchlistView({ watchlist, calc, catalogStatus, onRetryCatalog, currenc
 
   let body = null
   if (count === 0) body = <EmptyWatchlist />
-  else if (catalogStatus === 'loading') body = <p className="py-10 text-center text-sm text-fg-muted">Loading the card catalog…</p>
+  else if (catalogStatus === 'loading') body = <Skeleton label="Loading the card catalog" className="mt-4 h-24 w-full rounded-lg" />
   else if (catalogStatus === 'ready') {
     body = (
       <>
@@ -355,7 +354,7 @@ function WatchlistView({ watchlist, calc, catalogStatus, onRetryCatalog, currenc
     <div className={`${CONTAINER} pb-10 pt-5`}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <h2 id="watchlist-title" ref={headingRef} tabIndex={-1} className="text-lg font-bold text-fg outline-none">
+          <h2 id="watchlist-title" ref={headingRef} tabIndex={-1} className={`${PAGE_TITLE} outline-none`}>
             Watchlist
           </h2>
           <p className="text-sm text-fg-muted">

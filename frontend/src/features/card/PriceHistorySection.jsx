@@ -5,27 +5,34 @@ import { formatDate, formatDateTime, formatPctSigned, isoToMinute, pctChange } f
 import { describeChangeTime, getSeries, newerThanCatalog, summarizeSeries } from '../../data/history'
 import { stockInfo } from '../../lib/stock'
 import { SECTION_HEADING } from '../../ui/classes'
+import Notice from '../../ui/Notice'
+import Skeleton from '../../ui/Skeleton'
 
 // Shown when history recorded a change after the visitor's cached catalog
 // was built, so the footer's price/stock (from that catalog) is out of date.
 function StaleCatalogNote({ latest, catalogMinute, currency, rates, onRefresh, isRefreshing, refreshError }) {
   const [at, price, stock] = latest
   return (
-    <div className="rounded-lg border border-highlight-line bg-highlight px-3 py-2 text-xs leading-relaxed text-fg">
+    <Notice
+      tone="warning"
+      className="leading-relaxed"
+      action={
+        onRefresh && (
+          <Button variant="link" size="inline" onClick={onRefresh} disabled={isRefreshing}>
+            {isRefreshing ? 'Refreshing…' : 'Refresh now'}
+          </Button>
+        )
+      }
+    >
       <span className="font-semibold">Newer data:</span> {formatPrice(price, currency, rates)} ·{' '}
       {stockInfo(stock).label} as of {formatDateTime(at)} — the price and stock shown below are from your cached
-      catalog ({formatDateTime(catalogMinute)}).{' '}
-      {onRefresh && (
-        <Button variant="link" size="inline" onClick={onRefresh} disabled={isRefreshing}>
-          {isRefreshing ? 'Refreshing…' : 'Refresh now'}
-        </Button>
-      )}
+      catalog ({formatDateTime(catalogMinute)}).
       {onRefresh && refreshError && (
         <span role="alert" className="mt-1 block text-negative">
           Refresh failed ({refreshError}).
         </span>
       )}
-    </div>
+    </Notice>
   )
 }
 
@@ -44,7 +51,12 @@ function PriceHistorySection({
   refreshError,
 }) {
   if (history === undefined) {
-    return <p className="animate-pulse text-xs text-fg-subtle">Loading price history…</p>
+    return (
+      <section className="flex flex-col gap-2">
+        <h3 className={SECTION_HEADING}>Price history</h3>
+        <Skeleton label="Loading price history" className="h-36 w-full rounded-sm sm:h-40" />
+      </section>
+    )
   }
   if (history === null) return null
 
