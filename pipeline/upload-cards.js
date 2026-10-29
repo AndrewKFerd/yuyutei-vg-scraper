@@ -54,8 +54,17 @@ const fs = require('fs');
 const path = require('path');
 const { getBucket, getClient, putFile, headObjectSize, listObjects, deleteObject, normalizeEtag } = require('./s3');
 const { writeFileAtomic } = require('./fs-atomic');
+const { META_KEY, DELTA_KEY_RE, planLiveUpdate } = require('./build-delta');
+const { notifyRealtime } = require('./notify-realtime');
 
 const DATA_DIR = path.join(__dirname, 'data');
+// What the bucket held after the last fully successful upload (build-delta.js).
+const BASELINE_PATH = path.join(DATA_DIR, 'catalog-published.json');
+const DELTAS_DIR = path.join(DATA_DIR, 'deltas');
+// Deltas never change once written; meta.json is polled, so the proxy gives it a short edge cache of its own.
+const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+const SHORT_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
+const DELTA_RETENTION_MS = 24 * 60 * 60 * 1000;
 const DETAILS_DIR = path.join(DATA_DIR, 'details');
 const MANIFEST_PATH = path.join(DATA_DIR, 'upload-manifest.json');
 const MANIFEST_VERSION = 2; // v1 mapped key -> hash only; it is ignored (every shard is re-checked against the bucket)
@@ -275,8 +284,81 @@ async function main() {
 
   for (const obj of OBJECTS.slice(firstServed)) await uploadObject(obj);
 
+  // The delta and meta.json go up only after the catalog they describe, so a
+  // client that sees the new meta can always fetch the matching catalog.
+  await publishLiveUpdate();
+
   // Only now, with the new catalog live, drop shards of vanished sets.
   await pruneShards(shards);
+}
+
+/**
+ * Publishes the live-update artifacts for the catalog just uploaded (see
+ * build-delta.js): the price/stock delta against the last published catalog,
+ * then meta.json, then a Realtime hint. The baseline is saved last, so a
+ * failed upload retries the same delta next run. Failures to publish throw
+ * (the run is then marked failed and the baseline stays); the prune and the
+ * broadcast are best-effort.
+ *
+ * @returns {Promise<{meta: object, delta: object|null, reason: string|null}>}
+ */
+async function publishLiveUpdate({
+  catalogPath = path.join(DATA_DIR, 'catalog.json'),
+  baselinePath = BASELINE_PATH,
+  deltasDir = DELTAS_DIR,
+  metaPath = path.join(DATA_DIR, META_KEY),
+  put = (key, filePath, cacheControl) => putFile(key, filePath, { contentType: 'application/json', cacheControl }),
+  listRemote = () => listObjects('deltas/'),
+  remove = deleteObject,
+  notify = notifyRealtime,
+  now = Date.now(),
+} = {}) {
+  const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+  let baseline = null;
+  try {
+    baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+  } catch {
+    // missing/unreadable: no delta this run, clients reload the catalog once
+  }
+  const plan = planLiveUpdate(baseline, catalog);
+
+  if (plan.delta) {
+    const deltaPath = path.join(deltasDir, path.basename(plan.deltaKey));
+    fs.mkdirSync(deltasDir, { recursive: true });
+    writeFileAtomic(deltaPath, JSON.stringify(plan.delta));
+    await put(plan.deltaKey, deltaPath, IMMUTABLE_CACHE_CONTROL);
+    console.log(`Uploaded delta ${plan.deltaKey} (${plan.delta.changes.length} changed listing(s))`);
+  } else {
+    console.log(`[upload-cards] No delta this run (${plan.reason}); clients will reload the catalog once.`);
+  }
+  writeFileAtomic(metaPath, JSON.stringify(plan.meta));
+  await put(META_KEY, metaPath, SHORT_CACHE_CONTROL);
+  console.log(`Uploaded ${META_KEY} (chain of ${plan.meta.deltas.length})`);
+
+  try {
+    writeFileAtomic(baselinePath, JSON.stringify({ ...plan.state, meta: plan.meta }));
+  } catch (err) {
+    console.warn(`[upload-cards] Couldn't save ${baselinePath} (${err.message}); the next run will have no delta.`);
+  }
+
+  try {
+    const keep = new Set(plan.meta.deltas.map((d) => d.key));
+    const stale = [...(await listRemote()).keys()].filter((key) => {
+      if (keep.has(key) || !DELTA_KEY_RE.test(key)) return false;
+      const at = Date.parse(
+        key.replace(/^deltas\/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.json$/, '$1-$2-$3T$4:$5:$6Z')
+      );
+      return Number.isFinite(at) && now - at >= DELTA_RETENTION_MS;
+    });
+    for (const key of stale) await remove(key);
+    if (stale.length > 0) console.log(`Deleted ${stale.length} old delta(s).`);
+  } catch (err) {
+    console.warn(`[upload-cards] Couldn't prune old deltas (${err.message}).`);
+  }
+
+  const sent = await notify(plan.meta.generatedAt);
+  if (!sent.sent) console.warn(`[upload-cards] Realtime broadcast skipped: ${sent.reason}.`);
+  return { meta: plan.meta, delta: plan.delta, reason: plan.reason };
 }
 
 
@@ -386,6 +468,7 @@ module.exports = {
   ORPHAN_GRACE_MS,
   uploadShards,
   pruneShards,
+  publishLiveUpdate,
   listLocalShards,
   runPool,
   OBJECTS,

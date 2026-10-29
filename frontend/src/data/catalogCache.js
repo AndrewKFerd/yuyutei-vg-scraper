@@ -81,8 +81,8 @@ async function readFromCache(url, ttlMs, validate) {
 }
 
 /** Fetches fresh from the network and (best-effort) caches the response if it's valid. */
-async function fetchAndCache(url, validate, nullOn404) {
-  const response = await fetch(url)
+async function fetchAndCache(url, validate, nullOn404, fetchUrl = url) {
+  const response = await fetch(fetchUrl)
   if (nullOn404 && response.status === 404) return null
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
@@ -120,13 +120,13 @@ async function fetchAndCache(url, validate, nullOn404) {
  * genuine network/HTTP failure on the fetch ever rejects; every
  * cache-related failure degrades silently to a normal fetch instead.
  * @param {string} url
- * @param {{ ttlMs: number, validate?: (data: any) => boolean, nullOn404?: boolean, force?: boolean }} options
+ * @param {{ ttlMs: number, validate?: (data: any) => boolean, nullOn404?: boolean, force?: boolean, fetchUrl?: string }} options
  * @returns {Promise<{ data: any, fromCache: boolean }>}
  */
-export async function getCachedJson(url, { ttlMs, validate = () => true, nullOn404 = false, force = false }) {
+export async function getCachedJson(url, { ttlMs, validate = () => true, nullOn404 = false, force = false, fetchUrl }) {
   const cached = force ? null : await readFromCache(url, ttlMs, validate)
   if (cached) return { data: cached, fromCache: true }
-  return { data: await fetchAndCache(url, validate, nullOn404), fromCache: false }
+  return { data: await fetchAndCache(url, validate, nullOn404, fetchUrl), fromCache: false }
 }
 
 /** Drops one URL's cached copy and its timestamp, so the next load re-fetches. */
@@ -205,8 +205,12 @@ function isValidCatalog(data) {
 /**
  * The catalog, via the hourly cache (bypassed for reading with `force`).
  * Resolves to `{ data, fromCache }`; rejects only on a network/HTTP failure
- * (see getCachedJson).
+ * (see getCachedJson). `version` fetches that build under a versioned URL.
+ * @param {{ force?: boolean, version?: string }} [options]
  */
-export function getCachedCatalog({ force = false } = {}) {
-  return getCachedJson(CATALOG_URL, { ttlMs: CATALOG_TTL_MS, validate: isValidCatalog, force })
+export function getCachedCatalog({ force = false, version } = {}) {
+  // A version (the generatedAt from /api/meta) makes the request a new URL, so the edge
+  // cache can't answer with an older catalog; the result is still stored under CATALOG_URL.
+  const fetchUrl = version ? `${CATALOG_URL}?v=${encodeURIComponent(version)}` : undefined
+  return getCachedJson(CATALOG_URL, { ttlMs: CATALOG_TTL_MS, validate: isValidCatalog, force, fetchUrl })
 }

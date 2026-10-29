@@ -163,6 +163,17 @@ differs from the local MD5 (`FORCE_SHARD_UPLOAD=1` sends all). Shards of sets
 that have disappeared are deleted after 48 h orphaned, never more than a fifth
 per run.
 
+## Live updates (meta + deltas + push)
+
+`upload-cards.js` finishes with `publishLiveUpdate` (logic in `build-delta.js`, hint in `notify-realtime.js`), after `catalog.json` is up:
+
+1. **Delta**: compares the catalog with `data/catalog-published.json` (what the bucket held after the last fully successful upload) and uploads `deltas/<YYYYMMDDTHHMMSSZ>.json`, `{ from, to, changes: [[id, price, stock]] }`. Immutable; remote deltas older than 24 h and out of the chain are deleted.
+2. **`meta.json`**, last, so it never points at a missing object: `{ generatedAt, structHash, deltas: [{ from, to, key, n }] }`, the newest 12 deltas. `structHash` covers everything in the catalog except price, stock, priceDisplay and chg7d (it is also stored in `catalog.json`). Different hash, no baseline, or more than 25% of listings changed: no delta, the chain restarts empty and clients reload the catalog.
+3. **Baseline** is rewritten only after both uploads succeeded, so a failed run retries the same delta.
+4. **Broadcast** (best effort, never fails the run): POST to `${SUPABASE_URL}/realtime/v1/api/broadcast` with `SUPABASE_SERVICE_KEY`, topic `catalog`, event `updated`. Clients treat it only as a hint to read `/api/meta`.
+
+Served through `/api/meta` (edge cache 15 s) and `/api/deltas/<stamp>` (immutable). Tests: `test/live-update.test.js`.
+
 ## Data files
 
 Committed (slow to rebuild or hand-written): `card-details-raw.json`,

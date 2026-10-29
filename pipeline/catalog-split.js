@@ -30,6 +30,7 @@ const fs = require('fs');
 const path = require('path');
 const { writeFileAtomic } = require('./fs-atomic');
 const { NATIONS, nationOf } = require('./nation');
+const { structHash } = require('./build-delta');
 
 // Fields that only the card modal shows. translationSource is deliberately
 // NOT here: Market Movers ranks a group's representative printing by it, and
@@ -139,7 +140,7 @@ function buildSetList(cards, rawSets) {
 
 /** The slim catalog payload for a full card list. */
 function buildSlimCatalog(cards, { generatedAt, sets } = {}) {
-  return {
+  const payload = {
     v: CATALOG_FORMAT_VERSION,
     generatedAt,
     count: cards.length,
@@ -148,6 +149,10 @@ function buildSlimCatalog(cards, { generatedAt, sets } = {}) {
     sets: buildSetList(cards, sets),
     cards: cards.map(slimCard),
   };
+  // Lets a client tell whether a price/stock delta (build-delta.js) can bring
+  // its copy up to date, or whether something structural changed.
+  payload.structHash = structHash(payload);
+  return payload;
 }
 
 /** A card's heavy fields with nulls dropped, or null when it has none. */

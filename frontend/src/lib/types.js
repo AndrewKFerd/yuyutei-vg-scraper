@@ -33,6 +33,7 @@
  * @typedef {object} CatalogPayload
  * @property {Card[]} cards
  * @property {string} generatedAt  ISO time the pipeline built it.
+ * @property {string} [structHash]  Hash of everything but price/stock, to tell whether deltas can update it.
  * @property {number} count
  * @property {{ code: string, label: string, group?: string }[]} [nations]
  * @property {{ slug: string, code: string | null, name: string | null }[]} [sets]

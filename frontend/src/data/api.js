@@ -2,6 +2,7 @@ import { CATALOG_FORMAT_VERSION, dropLegacyCatalogCache, getCachedCatalog } from
 import { hydrateCards } from '../lib/catalogFormat'
 import { clearDetailsCache } from './details'
 import { clearHistoryCache } from './history'
+import { fetchMeta } from './deltas'
 
 /**
  * Fetches the pre-generated card catalog — every set, tens of thousands of
@@ -20,13 +21,16 @@ import { clearHistoryCache } from './history'
  * The omitted derived fields (imageUrl, detailUrl, priceDisplay) are filled
  * back in here once, so the rest of the app reads them as before.
  *
- * @param {{ force?: boolean }} [options]
+ * `version` (a generatedAt from /api/meta) asks for that exact build, past any
+ * edge-cached older one.
+ *
+ * @param {{ force?: boolean, version?: string }} [options]
  * @returns {Promise<import('../lib/types.js').CatalogPayload & { fromCache: boolean }>}
  */
-export async function fetchCatalog({ force = false } = {}) {
+export async function fetchCatalog({ force = false, version } = {}) {
   let data, fromCache
   try {
-    ;({ data, fromCache } = await getCachedCatalog({ force }))
+    ;({ data, fromCache } = await getCachedCatalog({ force, version }))
   } catch (err) {
     throw new Error(`Could not load the card catalog. (${err.message})`)
   }
@@ -50,10 +54,14 @@ export async function fetchCatalog({ force = false } = {}) {
  * the fresh catalog; they reload lazily when next needed). A failure -- offline, a
  * 5xx, or an empty catalog -- rejects and leaves every cache as it was, so
  * the page can keep showing what it already has.
+ * @param {{ version?: string }} [options]  a known newer build (a generatedAt from /api/meta)
  * @returns {Promise<import('../lib/types.js').CatalogPayload & { fromCache: boolean }>}
  */
-export async function refreshCatalog() {
-  const result = await fetchCatalog({ force: true })
+export async function refreshCatalog({ version } = {}) {
+  // Without a known version, ask /api/meta for the latest one (best effort) so
+  // the request skips the edge cache; a failure just falls back to the plain URL.
+  const target = version ?? (await fetchMeta().catch(() => null))?.generatedAt
+  const result = await fetchCatalog({ force: true, version: target })
   if (result.cards.length === 0) throw new Error('The server returned an empty card catalog.')
   await clearHistoryCache()
   await clearDetailsCache()

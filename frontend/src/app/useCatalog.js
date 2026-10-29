@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchCatalog, refreshCatalog } from '../data/api'
+import { clearHistoryCache } from '../data/history'
 
 /** @typedef {import('../lib/types.js').CatalogPayload} CatalogPayload */
 
@@ -10,16 +11,18 @@ import { fetchCatalog, refreshCatalog } from '../data/api'
  * place -- give them stable identities (useCallback), as the load effect
  * depends on `onLoaded`.
  *
- * Returns { cards, cardsById, meta: { generatedAt, count }, nations, sets,
- * status: 'loading'|'ready'|'error', errorMessage, retry, refresh,
- * isRefreshing, refreshError, dataVersion }. `dataVersion` goes up after
+ * Returns { cards, cardsById, meta: { generatedAt, count, structHash }, nations,
+ * sets, status: 'loading'|'ready'|'error', errorMessage, retry, refresh,
+ * reloadTo, applyPatch, isRefreshing, refreshError, dataVersion }. `reloadTo(version)`
+ * is refresh() for a known newer build; `applyPatch(cards, generatedAt)` swaps in
+ * cards brought up to date by price/stock deltas (see data/deltas.js). `dataVersion` goes up after
  * each refresh (which also drops the history/movers caches), so the Movers
  * view and card modal reload them.
- * @param {{ onLoaded?: (data: CatalogPayload) => void, onRefreshed?: (data: CatalogPayload) => void }} handlers
+ * @param {{ onLoaded?: (data: CatalogPayload) => void, onRefreshed?: (data: Pick<CatalogPayload, 'cards'>) => void }} handlers
  */
 export function useCatalog({ onLoaded, onRefreshed }) {
   const [cards, setCards] = useState(/** @type {import('../lib/types.js').Card[]} */ ([]))
-  const [meta, setMeta] = useState(/** @type {{ generatedAt: string, count: number } | null} */ (null))
+  const [meta, setMeta] = useState(/** @type {{ generatedAt: string, count: number, structHash?: string } | null} */ (null))
   const [status, setStatus] = useState(/** @type {import('../lib/types.js').CatalogStatus} */ ('loading'))
   const [errorMessage, setErrorMessage] = useState('')
   const [loadAttempt, setLoadAttempt] = useState(0)
@@ -37,7 +40,7 @@ export function useCatalog({ onLoaded, onRefreshed }) {
     setCards(data.cards)
     setNations(Array.isArray(data.nations) ? data.nations : [])
     setSets(Array.isArray(data.sets) ? data.sets : [])
-    setMeta({ generatedAt: data.generatedAt, count: data.count })
+    setMeta({ generatedAt: data.generatedAt, count: data.count, structHash: data.structHash })
   }, [])
 
   useEffect(() => {
@@ -68,18 +71,38 @@ export function useCatalog({ onLoaded, onRefreshed }) {
   // cache instead of waiting for it to expire on its own. A failure only
   // shows a note: the catalog already on screen (and in the cache) is
   // still good, so it stays.
-  const refresh = useCallback(() => {
-    setIsRefreshing(true)
-    setRefreshError('')
-    refreshCatalog()
-      .then((data) => {
-        apply(data)
-        onRefreshed?.(data)
-        setDataVersion((v) => v + 1)
-      })
-      .catch((err) => setRefreshError(err.message))
-      .finally(() => setIsRefreshing(false))
-  }, [apply, onRefreshed])
+  // `version` (from reloadTo) asks for that exact build; the header button calls
+  // refresh with a click event, which is ignored.
+  const runRefresh = useCallback(
+    (version) => {
+      setIsRefreshing(true)
+      setRefreshError('')
+      return refreshCatalog({ version })
+        .then((data) => {
+          apply(data)
+          onRefreshed?.(data)
+          setDataVersion((v) => v + 1)
+        })
+        .catch((err) => setRefreshError(err.message))
+        .finally(() => setIsRefreshing(false))
+    },
+    [apply, onRefreshed]
+  )
+  const refresh = useCallback(() => runRefresh(), [runRefresh])
+  const reloadTo = useCallback((version) => runRefresh(version), [runRefresh])
+
+  // Cards already brought up to date by deltas: same catalog, newer prices.
+  // The price history and movers describe the same moment, so they reload too.
+  const applyPatch = useCallback(
+    async (patched, generatedAt) => {
+      await clearHistoryCache()
+      setCards(patched)
+      setMeta((prev) => (prev ? { ...prev, generatedAt } : prev))
+      onRefreshed?.({ cards: patched })
+      setDataVersion((v) => v + 1)
+    },
+    [onRefreshed]
+  )
 
   // id -> card, for joining movers.json entries, saved lists and the price
   // list against the catalog.
@@ -95,6 +118,8 @@ export function useCatalog({ onLoaded, onRefreshed }) {
     errorMessage,
     retry,
     refresh,
+    reloadTo,
+    applyPatch,
     isRefreshing,
     refreshError,
     dataVersion,

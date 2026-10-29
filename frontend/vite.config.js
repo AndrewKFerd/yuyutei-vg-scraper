@@ -10,7 +10,13 @@ const API_ROUTES = {
   '/api/catalog': ['./api/catalog.js', 'catalog.json'],
   '/api/history': ['./api/history.js', 'history-public.json'],
   '/api/movers': ['./api/movers.js', 'movers.json'],
+  '/api/meta': ['./api/meta.js', 'meta.json'],
 }
+
+// /api/deltas/<stamp> likewise (api/deltas/[ts].js), as req.query.ts; locally
+// it maps to <LOCAL_DATA_DIR>/deltas/<stamp>.json.
+const DELTAS_ROUTE = '/api/deltas'
+const DELTAS_MODULE = './api/deltas/[ts].js'
 
 // /api/details/<setSlug> is a file-system dynamic route in production
 // (api/details/[set].js); the dev server mounts it by prefix and passes the
@@ -107,6 +113,19 @@ function apiDevMiddleware(env) {
           return
         }
         const { default: handler } = await import(new URL(DETAILS_MODULE, import.meta.url).href)
+        await handler(req, res)
+      })
+      server.middlewares.use(DELTAS_ROUTE, async (req, res) => {
+        const stamp = singleSegment(req)
+        req.query = { ts: stamp }
+        if (localDir) {
+          const { deltaKeyForStamp } = await import(new URL('./api/_supabaseCards.js', import.meta.url).href)
+          const key = deltaKeyForStamp(stamp)
+          if (!key) return sendLocalError(res, 400, 'Bad request')
+          await serveLocalFile(req, res, path.join(localDir, key))
+          return
+        }
+        const { default: handler } = await import(new URL(DELTAS_MODULE, import.meta.url).href)
         await handler(req, res)
       })
       for (const [route, [modulePath, fileName]] of Object.entries(API_ROUTES)) {

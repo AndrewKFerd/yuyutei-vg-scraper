@@ -5,6 +5,7 @@ import { prefersReducedMotion } from './ui/motion'
 import { applyTheme, getInitialTheme } from './ui/theme'
 import { useCalculator } from './features/calculator/useCalculator'
 import { useCatalog } from './app/useCatalog'
+import { useLiveUpdates } from './app/useLiveUpdates'
 import { useSavedLists } from './features/saved-lists/useSavedLists'
 import { useSearch } from './features/search/useSearch'
 import { useWatchlist } from './features/watchlist/useWatchlist'
@@ -89,6 +90,14 @@ function App() {
   }, [])
   const catalog = useCatalog({ onLoaded: openDeepLink, onRefreshed: swapInFreshCards })
   const { cards, cardsById, meta, status } = catalog
+  // Picks up newer prices within about a minute (or at once, with push): deltas when possible, a reload otherwise.
+  useLiveUpdates({
+    ready: status === 'ready',
+    loaded: meta,
+    cards,
+    applyPatch: catalog.applyPatch,
+    reloadTo: catalog.reloadTo,
+  })
 
   const search = useSearch({ initial: initialUrl, cards, catalogSets: catalog.sets, catalogReady: status === 'ready' })
 

@@ -30,6 +30,14 @@ English names come from the official English card database where a card has been
 
 The pipeline runs locally rather than in the cloud because yuyu-tei blocks cloud servers.
 
+## How fresh the data is
+
+The pipeline publishes every 30 minutes, and the site picks it up within about a minute:
+
+- After each upload the pipeline writes `meta.json` (the newest build and a chain of price/stock deltas) and, if configured, sends a Supabase Realtime Broadcast on the `catalog` channel.
+- An open tab asks `/api/meta` every minute (every 5 minutes while push is connected), when it regains focus, and when the broadcast arrives. If only prices or stock changed it downloads the small delta files (about 1 KB for a few dozen changes) and patches the cards in place; if anything else changed (new cards, renames, new sets) it reloads the whole catalog under a versioned URL so no cache can serve an older one.
+- Push needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` on Vercel (the anon key is public) and `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` in `pipeline/.env`. Without them the site simply polls.
+
 ## Running it
 
 **The website, locally:**

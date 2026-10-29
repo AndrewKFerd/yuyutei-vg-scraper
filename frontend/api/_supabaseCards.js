@@ -16,7 +16,16 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 // Only these keys are servable; anything else is refused before
 // any request reaches S3, so a future route (or a bug that lets a caller
 // influence the key) can't turn this into a read-anything proxy.
-const SERVABLE_KEYS = new Set(['catalog.json', 'history-public.json', 'movers.json'])
+const SERVABLE_KEYS = new Set(['catalog.json', 'history-public.json', 'movers.json', 'meta.json'])
+
+// Price/stock deltas (deltas/<YYYYMMDDTHHMMSSZ>.json), see pipeline/build-delta.js.
+const DELTA_STAMP_RE = /^\d{8}T\d{6}Z$/
+const DELTA_KEY_RE = /^deltas\/\d{8}T\d{6}Z\.json$/
+
+/** The bucket key for a delta, or null if `stamp` isn't a plausible delta stamp. */
+export function deltaKeyForStamp(stamp) {
+  return typeof stamp === 'string' && DELTA_STAMP_RE.test(stamp) ? `deltas/${stamp}.json` : null
+}
 
 // Per-set detail shards (details/<setSlug>.json). Set slugs are lowercase
 // letters, digits and hyphens (dzbt14, vpromo-300). The pattern is strict
@@ -50,7 +59,8 @@ function getClient() {
 
 /** Resolves to the readable body stream of an allowlisted bucket object. */
 export async function fetchObjectStream(key) {
-  if (!SERVABLE_KEYS.has(key) && !(typeof key === 'string' && key.length <= 80 && DETAIL_KEY_RE.test(key))) {
+  const isShardKey = typeof key === 'string' && key.length <= 80 && (DETAIL_KEY_RE.test(key) || DELTA_KEY_RE.test(key))
+  if (!SERVABLE_KEYS.has(key) && !isShardKey) {
     throw new Error(`Refusing to read non-servable object key "${key}"`)
   }
   const result = await getClient().send(new GetObjectCommand({
